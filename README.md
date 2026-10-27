@@ -1,20 +1,23 @@
-# GDC – Guinée Digital Connect
+# GDC – Backend
 
-Plateforme de mise en relation entre clients et techniciens / artisans vérifiés en Guinée.
-Projet né lors du Hackathon Future Champions 2026.
+Branche du serveur de la plateforme GDC. Le frontend (branche `Frontend`) fonctionne aujourd'hui avec des
+données fictives ; ce backend doit les remplacer. Les points à brancher sont marqués `TODO` dans le code du frontend.
 
-## Branches
+## À construire
 
-| Branche | Contenu |
+| Domaine | Rôle |
 |---|---|
-| `main` | Branche de référence : on y fusionne le frontend et le backend une fois validés. |
-| `Frontend` | Application web (Next.js 16, Tailwind CSS 4, GSAP) : site public, espaces client et technicien, back-office. |
-| `Backend` | API et services : comptes, demandes, devis, paiements, notifications. En cours de conception. |
+| Authentification | Connexion par numéro de téléphone + code SMS, connexion Google (vérification du jeton), sessions |
+| Utilisateurs | Clients, techniciens, administrateurs ; profils, photos, portfolio |
+| Vérification | Dépôt et contrôle des pièces (niveaux 1 à 3), stockage sécurisé des documents |
+| Demandes et missions | Publication, acceptation, statuts, code de début d'intervention, suivi GPS |
+| Devis et paiements | Devis, Orange Money / MTN MoMo, conservation du paiement, versement, commission |
+| Messagerie | Conversations par mission en temps réel, photos |
+| Notifications | SMS, WhatsApp Business, notifications de l'application, modèles et journal |
+| Avis et modération | Avis liés aux missions, signalements, modération |
+| Référentiels | Métiers, zones (avec coordonnées), paramètres et logo de la plateforme |
 
-## Démarrer le frontend
+## Contrat avec le frontend
 
-```bash
-git checkout Frontend
-npm install
-npm run dev   # http://localhost:3000
-```
+Les structures de données attendues sont décrites dans `src/lib/data.ts`, `src/lib/devis.ts`,
+`src/lib/messages.ts` et `src/lib/notifier.ts` sur la branche `Frontend`.
