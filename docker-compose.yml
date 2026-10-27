@@ -1,0 +1,21 @@
+# PostgreSQL pour le développement ou un serveur : `docker compose up -d`.
+# Sans Docker, `npm run db` lance une base embarquée équivalente (même port, mêmes identifiants).
+services:
+  postgres:
+    image: postgres:18-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: gdc
+      POSTGRES_PASSWORD: gdc
+      POSTGRES_DB: gdc
+    ports:
+      - '5433:5432'
+    volumes:
+      - pgdata:/var/lib/postgresql
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U gdc -d gdc']
+      interval: 5s
+      retries: 10
+
+volumes:
+  pgdata:

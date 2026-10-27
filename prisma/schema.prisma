@@ -1,0 +1,393 @@
+// Schéma de données de la plateforme GDC.
+// Aligné sur les structures du frontend (branche Frontend, src/lib/*.ts).
+
+generator client {
+  provider     = "prisma-client"
+  output       = "../src/generated/prisma"
+  moduleFormat = "esm"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ---------------------------------------------------------------- Comptes
+
+enum Role {
+  CLIENT
+  TECHNICIEN
+  ADMIN
+}
+
+enum StatutCompte {
+  ACTIF
+  SUSPENDU
+  EN_ATTENTE
+}
+
+enum TypeClient {
+  PARTICULIER
+  ENTREPRISE
+}
+
+model User {
+  id         String       @id @default(cuid())
+  telephone  String       @unique // format international : +224XXXXXXXXX
+  email      String?      @unique
+  googleId   String?      @unique
+  nom        String
+  prenom     String
+  role       Role         @default(CLIENT)
+  statut     StatutCompte @default(ACTIF)
+  photoUrl   String?
+  typeClient TypeClient?
+  entreprise String?
+  zoneId     String?
+  zone       Zone?        @relation(fields: [zoneId], references: [id])
+  createdAt  DateTime     @default(now())
+  updatedAt  DateTime     @updatedAt
+
+  technicien        ProfilTechnicien?
+  sessions          Session[]
+  demandes          Demande[]         @relation("DemandesClient")
+  messages          Message[]
+  avisDonnes        Avis[]            @relation("AvisAuteur")
+  notifications     Notification[]
+  signalements      Signalement[]
+  decisionsVerif    Verification[]    @relation("VerificationDecideur")
+
+  @@index([role, statut])
+}
+
+/// Code de connexion envoyé par SMS (haché, à usage unique, durée limitée).
+model CodeOtp {
+  id        String   @id @default(cuid())
+  telephone String
+  codeHash  String
+  expireLe  DateTime
+  essais    Int      @default(0)
+  utilise   Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@index([telephone, createdAt])
+}
+
+/// Session ouverte sur un appareil : porte le jeton de rafraîchissement (haché).
+model Session {
+  id        String    @id @default(cuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash String    @unique
+  appareil  String?
+  expireLe  DateTime
+  revoqueLe DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId])
+}
+
+// ---------------------------------------------------------- Référentiels
+
+model Metier {
+  id          String   @id // identifiant lisible : electricite, plomberie…
+  label       String   @unique
+  specialites String[]
+  actif       Boolean  @default(true)
+  createdAt   DateTime @default(now())
+
+  techniciens ProfilTechnicien[]
+  demandes    Demande[]
+}
+
+model Zone {
+  id        String   @id @default(cuid())
+  nom       String   @unique
+  ville     String
+  lat       Float?
+  lng       Float?
+  actif     Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  utilisateurs User[]
+  demandes     Demande[]
+  techniciens  ProfilTechnicien[] @relation("ZonesIntervention")
+}
+
+// ------------------------------------------------------------ Techniciens
+
+model ProfilTechnicien {
+  id             String       @id @default(cuid())
+  userId         String       @unique
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  metierId       String
+  metier         Metier       @relation(fields: [metierId], references: [id])
+  specialites    String[]
+  experience     Int          @default(0)
+  bio            String       @default("")
+  /// 0 = non vérifié, 1 = identité, 2 = compétence, 3 = recommandé
+  niveau         Int          @default(0)
+  disponible     Boolean      @default(true)
+  disponibilites String       @default("Lundi – Samedi (8h – 18h)")
+  note           Float        @default(0)
+  nbAvis         Int          @default(0)
+  nbMissions     Int          @default(0)
+  zones          Zone[]       @relation("ZonesIntervention")
+  realisations   Realisation[]
+  missions       Demande[]    @relation("MissionsTechnicien")
+  avisRecus      Avis[]       @relation("AvisTechnicien")
+  verifications  Verification[]
+  createdAt      DateTime     @default(now())
+
+  @@index([metierId, disponible, niveau])
+}
+
+model Realisation {
+  id           String           @id @default(cuid())
+  technicienId String
+  technicien   ProfilTechnicien @relation(fields: [technicienId], references: [id], onDelete: Cascade)
+  titre        String
+  categorie    String
+  imageUrl     String
+  createdAt    DateTime         @default(now())
+}
+
+enum StatutVerification {
+  EN_ATTENTE
+  EN_COURS
+  APPROUVEE
+  REFUSEE
+}
+
+model Verification {
+  id           String             @id @default(cuid())
+  technicienId String
+  technicien   ProfilTechnicien   @relation(fields: [technicienId], references: [id], onDelete: Cascade)
+  niveau       Int
+  statut       StatutVerification @default(EN_ATTENTE)
+  /// Liste des pièces : [{ type, url }]
+  pieces       Json               @default("[]")
+  message      String?
+  commentaire  String?
+  decideurId   String?
+  decideur     User?              @relation("VerificationDecideur", fields: [decideurId], references: [id])
+  decideLe     DateTime?
+  createdAt    DateTime           @default(now())
+
+  @@index([statut])
+}
+
+// ------------------------------------------------------ Demandes / missions
+
+enum StatutDemande {
+  ENVOYEE
+  ACCEPTEE
+  EN_COURS
+  TERMINEE
+  ANNULEE
+}
+
+model Demande {
+  id               String           @id @default(cuid())
+  /// Numéro lisible affiché aux utilisateurs (#1023)
+  numero           Int              @unique @default(autoincrement())
+  clientId         String
+  client           User             @relation("DemandesClient", fields: [clientId], references: [id])
+  technicienId     String?
+  technicien       ProfilTechnicien? @relation("MissionsTechnicien", fields: [technicienId], references: [id])
+  metierId         String
+  metier           Metier           @relation(fields: [metierId], references: [id])
+  titre            String
+  description      String
+  zoneId           String
+  zone             Zone             @relation(fields: [zoneId], references: [id])
+  adresse          String
+  lat              Float?
+  lng              Float?
+  urgente          Boolean          @default(false)
+  dateSouhaitee    DateTime?
+  creneau          String?
+  budget           Int?
+  photos           String[]
+  statut           StatutDemande    @default(ENVOYEE)
+  /// Code présenté par le client à l'arrivée du technicien (début d'intervention)
+  codeIntervention String
+  accepteeLe       DateTime?
+  demarreeLe       DateTime?
+  termineeLe       DateTime?
+  annuleeLe        DateTime?
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+
+  devis    Devis?
+  messages Message[]
+  avis     Avis?
+
+  @@index([clientId, statut])
+  @@index([technicienId, statut])
+  @@index([zoneId, metierId, statut])
+}
+
+enum StatutDevis {
+  BROUILLON
+  ENVOYE
+  ACCEPTE
+  REFUSE
+  PAYE
+}
+
+model Devis {
+  id          String      @id @default(cuid())
+  demandeId   String      @unique
+  demande     Demande     @relation(fields: [demandeId], references: [id], onDelete: Cascade)
+  statut      StatutDevis @default(BROUILLON)
+  deplacement Int         @default(0)
+  note        String?
+  envoyeLe    DateTime?
+  lignes      LigneDevis[]
+  paiement    Paiement?
+  updatedAt   DateTime    @updatedAt
+}
+
+model LigneDevis {
+  id       String @id @default(cuid())
+  devisId  String
+  devis    Devis  @relation(fields: [devisId], references: [id], onDelete: Cascade)
+  libelle  String
+  quantite Int
+  prix     Int
+  ordre    Int    @default(0)
+}
+
+enum MoyenPaiement {
+  ORANGE
+  MTN
+  ESPECES
+}
+
+enum StatutPaiement {
+  EN_ATTENTE
+  CONFIRME
+  ECHOUE
+  REVERSE
+}
+
+model Paiement {
+  id         String         @id @default(cuid())
+  devisId    String         @unique
+  devis      Devis          @relation(fields: [devisId], references: [id], onDelete: Cascade)
+  moyen      MoyenPaiement
+  numero     String?
+  montant    Int
+  commission Int
+  reference  String         @unique
+  statut     StatutPaiement @default(EN_ATTENTE)
+  confirmeLe DateTime?
+  createdAt  DateTime       @default(now())
+}
+
+// -------------------------------------------------------------- Échanges
+
+model Message {
+  id        String   @id @default(cuid())
+  demandeId String
+  demande   Demande  @relation(fields: [demandeId], references: [id], onDelete: Cascade)
+  auteurId  String
+  auteur    User     @relation(fields: [auteurId], references: [id])
+  texte     String?
+  photoUrl  String?
+  lu        Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@index([demandeId, createdAt])
+}
+
+enum StatutAvis {
+  PUBLIE
+  EN_ATTENTE
+  MASQUE
+}
+
+model Avis {
+  id           String           @id @default(cuid())
+  demandeId    String           @unique
+  demande      Demande          @relation(fields: [demandeId], references: [id], onDelete: Cascade)
+  auteurId     String
+  auteur       User             @relation("AvisAuteur", fields: [auteurId], references: [id])
+  technicienId String
+  technicien   ProfilTechnicien @relation("AvisTechnicien", fields: [technicienId], references: [id])
+  note         Int
+  criteres     Json?
+  tags         String[]
+  commentaire  String?
+  recommande   Boolean?
+  reponse      String?
+  statut       StatutAvis       @default(PUBLIE)
+  signale      Boolean          @default(false)
+  createdAt    DateTime         @default(now())
+
+  @@index([technicienId, statut])
+}
+
+enum StatutSignalement {
+  OUVERT
+  EN_COURS
+  RESOLU
+}
+
+model Signalement {
+  id        String            @id @default(cuid())
+  type      String
+  cible     String
+  motif     String
+  priorite  String            @default("moyenne")
+  statut    StatutSignalement @default(OUVERT)
+  auteurId  String?
+  auteur    User?             @relation(fields: [auteurId], references: [id])
+  createdAt DateTime          @default(now())
+}
+
+// ---------------------------------------------------------- Notifications
+
+model Notification {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  /// demande | mission | avis | verification | systeme
+  type      String
+  titre     String
+  texte     String
+  lien      String?
+  lu        Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@index([userId, lu, createdAt])
+}
+
+/// Journal des SMS / WhatsApp envoyés par la plateforme.
+model EnvoiNotification {
+  id          String   @id @default(cuid())
+  evenement   String
+  canal       String
+  numero      String
+  texte       String
+  statut      String   @default("envoye")
+  erreur      String?
+  createdAt   DateTime @default(now())
+
+  @@index([createdAt])
+}
+
+/// Modèle de message par événement, modifiable dans le back-office.
+model ModeleNotification {
+  evenement String   @id
+  canaux    String[]
+  texte     String
+  updatedAt DateTime @updatedAt
+}
+
+/// Paramètres de la plateforme (clé → valeur JSON) : commission, logo, textes…
+model Parametre {
+  cle       String   @id
+  valeur    Json
+  updatedAt DateTime @updatedAt
+}
