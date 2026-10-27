@@ -1,20 +1,32 @@
-# GDC – Guinée Digital Connect
+# GDC – Guinée Digital Connect (frontend)
 
-Plateforme de mise en relation entre clients et techniciens / artisans vérifiés en Guinée.
-Projet né lors du Hackathon Future Champions 2026.
+Interface web de la plateforme GDC, en Next.js 16 (App Router) + Tailwind CSS 4 + GSAP.
 
-## Branches
-
-| Branche | Contenu |
-|---|---|
-| `main` | Branche de référence : on y fusionne le frontend et le backend une fois validés. |
-| `Frontend` | Application web (Next.js 16, Tailwind CSS 4, GSAP) : site public, espaces client et technicien, back-office. |
-| `Backend` | API et services : comptes, demandes, devis, paiements, notifications. En cours de conception. |
-
-## Démarrer le frontend
+## Lancer le projet
 
 ```bash
-git checkout Frontend
 npm install
-npm run dev   # http://localhost:3000
+npm run dev        # http://localhost:3000
+npm run build && npm start   # version de production
 ```
+
+## Organisation
+
+| Dossier | Contenu |
+|---|---|
+| `src/app/(public)` | Site public : accueil, recherche, résultats, profil technicien, à propos |
+| `src/app/(auth)` | Connexion (code SMS) et inscriptions client / technicien |
+| `src/app/client` | Espace client (8 écrans) |
+| `src/app/technicien` | Espace technicien (11 écrans) |
+| `src/app/admin` | Back-office (11 écrans) |
+| `src/components/motion` | Animations GSAP : transitions de page, `Reveal`, compteurs, graphiques, toasts |
+| `src/components/ui` | Composants d'interface (boutons, badges, onglets, tiroir, modale…) |
+| `src/lib/data.ts` | Données fictives, à remplacer par l'API |
+
+## Animations
+
+- `PageTransition` : fondu à chaque changement de page.
+- `Reveal` : apparition en cascade des enfants au défilement (ScrollTrigger).
+- `enter()` (dans `motion/gsap.ts`) : à utiliser à la place de `gsap.from()` pour les entrées,
+  car Next garde les pages montées (Activity) et `gsap.from()` peut alors lire un état final erroné.
+- Les animations sont désactivées si l'utilisateur a demandé à réduire les animations.
