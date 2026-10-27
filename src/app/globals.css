@@ -1,0 +1,181 @@
+@import "tailwindcss";
+
+@theme inline {
+  --font-sans: var(--font-jakarta), system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+@theme {
+  --color-brand-50: #eef6ff;
+  --color-brand-100: #d9eaff;
+  --color-brand-200: #b3d4ff;
+  --color-brand-400: #3d8fe6;
+  --color-brand-500: #1a7ae0;
+  --color-brand-600: #0066cc;
+  --color-brand-700: #0052a3;
+  --color-brand-800: #0a3d7a;
+  --color-brand-900: #0b2a5b;
+  --color-brand-950: #071a3a;
+  --color-accent-50: #fff4e6;
+  --color-accent-100: #ffe3bf;
+  --color-accent-400: #ff9d2e;
+  --color-accent-500: #ff8a00;
+  --color-accent-600: #e67a00;
+  --color-sky-brand: #00b4e6;
+}
+
+/* Les décors et les entrées animées ne doivent jamais créer de défilement horizontal (clip garde le sticky). */
+html,
+body {
+  overflow-x: clip;
+}
+
+body {
+  @apply bg-slate-50 text-slate-800 antialiased;
+}
+
+/* Les colonnes de grille peuvent rétrécir sous la largeur de leur contenu (graphiques, lignes longues). */
+.grid > * {
+  min-width: 0;
+}
+
+/* Masqué jusqu'à ce que GSAP joue l'entrée de page (évite le flash avant hydratation). */
+[data-page-transition] {
+  opacity: 0;
+}
+
+.scrollbar-none {
+  scrollbar-width: none;
+}
+.scrollbar-none::-webkit-scrollbar {
+  display: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-page-transition] {
+    opacity: 1;
+  }
+}
+
+/* ------------------------------------------------------------------ Mode sombre */
+/* Le thème est porté par data-theme sur <html>, posé avant le premier affichage (voir layout.tsx). */
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
+
+:root {
+  --surface: #ffffff;
+  --surface-2: #f1f5f9;
+  --grid: #e2e8f0;
+}
+
+/*
+ * En sombre, on inverse l'échelle des gris et on assombrit les teintes pastel : la plupart des composants
+ * suivent sans classe dédiée. Les couleurs aussi utilisées en fond plein (rouge du drapeau, bleus des
+ * dégradés…) ne sont corrigées que pour le texte, via les règles ciblées plus bas.
+ */
+[data-theme="dark"] {
+  color-scheme: dark;
+  --surface: #0f1a2e;
+  --surface-2: #17233b;
+  --grid: #24314f;
+
+  --color-slate-50: #0a1222;
+  --color-slate-100: #17233b;
+  --color-slate-200: #24314f;
+  --color-slate-300: #34436a;
+  --color-slate-400: #7d8cab;
+  --color-slate-500: #98a6c0;
+  --color-slate-600: #b4c0d4;
+  --color-slate-700: #cbd5e1;
+  --color-slate-800: #e2e8f0;
+  --color-slate-900: #f1f5f9;
+
+  --color-brand-50: rgb(26 122 224 / 0.16);
+  --color-brand-200: rgb(61 143 230 / 0.35);
+  --color-accent-50: rgb(255 138 0 / 0.14);
+  --color-accent-100: rgb(255 138 0 / 0.25);
+  --color-emerald-50: rgb(16 185 129 / 0.14);
+  --color-emerald-200: rgb(16 185 129 / 0.3);
+  --color-red-50: rgb(239 68 68 / 0.14);
+  --color-red-200: rgb(239 68 68 / 0.3);
+  --color-amber-50: rgb(245 158 11 / 0.14);
+  --color-amber-200: rgb(245 158 11 / 0.3);
+  --color-violet-50: rgb(139 92 246 / 0.16);
+  --color-violet-200: rgb(139 92 246 / 0.3);
+}
+
+[data-theme="dark"] .bg-white,
+[data-theme="dark"] .focus\:bg-white:focus {
+  background-color: var(--surface);
+}
+[data-theme="dark"] :is(.bg-white\/95, .bg-white\/90, .bg-white\/85, .bg-white\/80, .bg-white\/70, .bg-white\/60) {
+  background-color: color-mix(in oklab, var(--surface) 92%, transparent);
+}
+[data-theme="dark"] .ring-white {
+  --tw-ring-color: var(--surface);
+}
+
+[data-theme="dark"] .text-brand-950 { color: #f1f5f9; }
+[data-theme="dark"] .text-brand-900 { color: #dbe7ff; }
+[data-theme="dark"] .text-brand-800 { color: #c7dcff; }
+[data-theme="dark"] .text-brand-700 { color: #8fc1ff; }
+[data-theme="dark"] .text-brand-600 { color: #6cb0ff; }
+[data-theme="dark"] .text-accent-600 { color: #ffb35c; }
+[data-theme="dark"] .text-emerald-700 { color: #6ee7b7; }
+[data-theme="dark"] .text-emerald-600 { color: #34d399; }
+[data-theme="dark"] .text-red-700 { color: #fca5a5; }
+[data-theme="dark"] .text-red-600 { color: #f87171; }
+[data-theme="dark"] .text-amber-700 { color: #fcd34d; }
+[data-theme="dark"] .text-amber-600 { color: #fbbf24; }
+[data-theme="dark"] .text-violet-700 { color: #c4b5fd; }
+[data-theme="dark"] .text-violet-600 { color: #a78bfa; }
+
+/* Bascule de thème : transition douce des couleurs, sans toucher aux animations GSAP (opacité, transform). */
+.theme-transition,
+.theme-transition * {
+  transition: background-color 0.4s ease, border-color 0.4s ease, color 0.4s ease, fill 0.4s ease, stroke 0.4s ease !important;
+}
+
+/* Cartes Leaflet : tuiles OSM assombries en mode sombre, contrôles accordés au thème. */
+[data-theme="dark"] .leaflet-tile-pane {
+  filter: invert(1) hue-rotate(180deg) brightness(0.9) contrast(0.92) saturate(0.6);
+}
+[data-theme="dark"] .leaflet-container {
+  background: #0a1222;
+}
+[data-theme="dark"] .leaflet-control-zoom a,
+[data-theme="dark"] .leaflet-control-attribution {
+  background: var(--surface) !important;
+  color: var(--color-slate-700) !important;
+  border-color: var(--grid) !important;
+}
+.leaflet-container {
+  font-family: inherit;
+  /* Les couches Leaflet (z-index 400 à 1000) restent confinées à la carte : fenêtres et menus passent au-dessus. */
+  z-index: 0;
+  isolation: isolate;
+}
+
+/* Impression (rapport PDF) : seul le contenu de la page, sans navigation ni décor animé. */
+@media print {
+  .shell-aside,
+  header,
+  [aria-label="Fil d'Ariane"],
+  .no-print {
+    display: none !important;
+  }
+  body,
+  [data-page-transition] {
+    opacity: 1 !important;
+    visibility: visible !important;
+    background: #fff !important;
+  }
+  .lg:pl-64 {
+    padding-left: 0 !important;
+  }
+  * {
+    box-shadow: none !important;
+  }
+  .rounded-2xl,
+  .rounded-3xl {
+    break-inside: avoid;
+  }
+}

@@ -1,23 +1,32 @@
-# GDC – Backend
+# GDC – Guinée Digital Connect (frontend)
 
-Branche du serveur de la plateforme GDC. Le frontend (branche `Frontend`) fonctionne aujourd'hui avec des
-données fictives ; ce backend doit les remplacer. Les points à brancher sont marqués `TODO` dans le code du frontend.
+Interface web de la plateforme GDC, en Next.js 16 (App Router) + Tailwind CSS 4 + GSAP.
 
-## À construire
+## Lancer le projet
 
-| Domaine | Rôle |
+```bash
+npm install
+npm run dev        # http://localhost:3000
+npm run build && npm start   # version de production
+```
+
+## Organisation
+
+| Dossier | Contenu |
 |---|---|
-| Authentification | Connexion par numéro de téléphone + code SMS, connexion Google (vérification du jeton), sessions |
-| Utilisateurs | Clients, techniciens, administrateurs ; profils, photos, portfolio |
-| Vérification | Dépôt et contrôle des pièces (niveaux 1 à 3), stockage sécurisé des documents |
-| Demandes et missions | Publication, acceptation, statuts, code de début d'intervention, suivi GPS |
-| Devis et paiements | Devis, Orange Money / MTN MoMo, conservation du paiement, versement, commission |
-| Messagerie | Conversations par mission en temps réel, photos |
-| Notifications | SMS, WhatsApp Business, notifications de l'application, modèles et journal |
-| Avis et modération | Avis liés aux missions, signalements, modération |
-| Référentiels | Métiers, zones (avec coordonnées), paramètres et logo de la plateforme |
+| `src/app/(public)` | Site public : accueil, recherche, résultats, profil technicien, à propos |
+| `src/app/(auth)` | Connexion (code SMS) et inscriptions client / technicien |
+| `src/app/client` | Espace client (8 écrans) |
+| `src/app/technicien` | Espace technicien (11 écrans) |
+| `src/app/admin` | Back-office (11 écrans) |
+| `src/components/motion` | Animations GSAP : transitions de page, `Reveal`, compteurs, graphiques, toasts |
+| `src/components/ui` | Composants d'interface (boutons, badges, onglets, tiroir, modale…) |
+| `src/lib/data.ts` | Données fictives, à remplacer par l'API |
 
-## Contrat avec le frontend
+## Animations
 
-Les structures de données attendues sont décrites dans `src/lib/data.ts`, `src/lib/devis.ts`,
-`src/lib/messages.ts` et `src/lib/notifier.ts` sur la branche `Frontend`.
+- `PageTransition` : fondu à chaque changement de page.
+- `Reveal` : apparition en cascade des enfants au défilement (ScrollTrigger).
+- `enter()` (dans `motion/gsap.ts`) : à utiliser à la place de `gsap.from()` pour les entrées,
+  car Next garde les pages montées (Activity) et `gsap.from()` peut alors lire un état final erroné.
+- Les animations sont désactivées si l'utilisateur a demandé à réduire les animations.
