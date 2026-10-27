@@ -1,0 +1,930 @@
+{
+  "metiers": [
+    {
+      "id": "electricite",
+      "label": "Électricité",
+      "actif": true,
+      "specialites": [
+        "Installation",
+        "Dépannage",
+        "Maintenance",
+        "Câblage",
+        "Sécurité électrique",
+        "Solaire"
+      ]
+    },
+    {
+      "id": "plomberie",
+      "label": "Plomberie",
+      "actif": true,
+      "specialites": [
+        "Fuites",
+        "Sanitaires",
+        "Chauffe-eau"
+      ]
+    },
+    {
+      "id": "maconnerie",
+      "label": "Maçonnerie",
+      "actif": true,
+      "specialites": [
+        "Construction",
+        "Carrelage",
+        "Rénovation"
+      ]
+    },
+    {
+      "id": "menuiserie",
+      "label": "Menuiserie",
+      "actif": true,
+      "specialites": [
+        "Meubles sur mesure",
+        "Placards",
+        "Agencement",
+        "Portes",
+        "Charpente",
+        "Découpe"
+      ]
+    },
+    {
+      "id": "mecanique",
+      "label": "Mécanique",
+      "actif": true,
+      "specialites": [
+        "Freinage",
+        "Moteur",
+        "Diagnostic",
+        "Soudure",
+        "Ferronnerie",
+        "Portails"
+      ]
+    },
+    {
+      "id": "informatique",
+      "label": "Informatique",
+      "actif": true,
+      "specialites": []
+    },
+    {
+      "id": "peinture",
+      "label": "Peinture",
+      "actif": true,
+      "specialites": []
+    },
+    {
+      "id": "climatisation",
+      "label": "Climatisation",
+      "actif": false,
+      "specialites": []
+    }
+  ],
+  "zones": [
+    {
+      "nom": "Kaloum",
+      "ville": "Conakry",
+      "actif": true,
+      "lat": 9.5092,
+      "lng": -13.7122
+    },
+    {
+      "nom": "Dixinn",
+      "ville": "Conakry",
+      "actif": true,
+      "lat": 9.5459,
+      "lng": -13.6732
+    },
+    {
+      "nom": "Matam",
+      "ville": "Conakry",
+      "actif": true,
+      "lat": 9.5538,
+      "lng": -13.6474
+    },
+    {
+      "nom": "Ratoma",
+      "ville": "Conakry",
+      "actif": true,
+      "lat": 9.6032,
+      "lng": -13.6365
+    },
+    {
+      "nom": "Matoto",
+      "ville": "Conakry",
+      "actif": true,
+      "lat": 9.5803,
+      "lng": -13.6105
+    },
+    {
+      "nom": "Kagbelen",
+      "ville": "Kagbelen",
+      "actif": true,
+      "lat": 9.675,
+      "lng": -13.555
+    },
+    {
+      "nom": "Dubréka",
+      "ville": "Dubréka",
+      "actif": true,
+      "lat": 9.7906,
+      "lng": -13.5144
+    },
+    {
+      "nom": "Coyah",
+      "ville": "Coyah",
+      "actif": false,
+      "lat": 9.7069,
+      "lng": -13.3866
+    }
+  ],
+  "techniciens": [
+    {
+      "id": "mamadou-diallo",
+      "photo": "/images/electricien-ampoule.jpg",
+      "nom": "Mamadou Diallo",
+      "metier": "electricite",
+      "specialites": [
+        "Installation",
+        "Dépannage",
+        "Maintenance"
+      ],
+      "zone": "Kaloum",
+      "zonesIntervention": [
+        "Kaloum",
+        "Dixinn",
+        "Matam"
+      ],
+      "note": 4.8,
+      "nbAvis": 32,
+      "niveau": 2,
+      "disponible": true,
+      "experience": 8,
+      "missions": 54,
+      "telephone": "+224 620 00 00 01",
+      "bio": "Technicien électricien avec plus de 8 ans d'expérience dans l'installation, le dépannage et la maintenance des systèmes électriques résidentiels et commerciaux.",
+      "disponibilites": "Lundi – Samedi (8h – 18h)",
+      "realisations": [
+        {
+          "titre": "Tableau électrique villa",
+          "categorie": "Installation",
+          "image": "/images/electricien-tableau.jpg"
+        },
+        {
+          "titre": "Éclairage boutique",
+          "categorie": "Installation",
+          "image": "/images/electricien-ampoule.jpg"
+        },
+        {
+          "titre": "Câblage immeuble R+3",
+          "categorie": "Câblage",
+          "image": "/images/chantier.jpg"
+        },
+        {
+          "titre": "Groupe électrogène",
+          "categorie": "Maintenance",
+          "image": "/images/equipe-usine.jpg"
+        },
+        {
+          "titre": "Mise aux normes bureau",
+          "categorie": "Dépannage",
+          "image": "/images/electricienne.jpg"
+        },
+        {
+          "titre": "Éclairage extérieur",
+          "categorie": "Installation",
+          "image": "/images/technicien-antenne.jpg"
+        }
+      ],
+      "inscrit": "14 janv. 2026",
+      "statut": "actif",
+      "avis": [
+        {
+          "auteur": "Abdoulaye Bah",
+          "note": 5,
+          "commentaire": "Très professionnel et rapide. Je recommande !",
+          "date": "12 oct. 2026",
+          "mission": "Installation électrique"
+        },
+        {
+          "auteur": "Fatoumata Sow",
+          "note": 5,
+          "commentaire": "Travail propre, ponctuel et prix correct. Il a tout expliqué avant de commencer.",
+          "date": "2 oct. 2026",
+          "mission": "Tableau électrique"
+        },
+        {
+          "auteur": "Ibrahima Touré",
+          "note": 4,
+          "commentaire": "Bon travail, juste un peu de retard au rendez-vous.",
+          "date": "20 sept. 2026",
+          "mission": "Dépannage"
+        },
+        {
+          "auteur": "Mariam Diallo",
+          "note": 5,
+          "commentaire": "Travail bien fait, très soigné.",
+          "date": "8 sept. 2026",
+          "mission": "Éclairage extérieur"
+        }
+      ]
+    },
+    {
+      "id": "ibrahima-camara",
+      "photo": "/images/electricien-tableau.jpg",
+      "nom": "Ibrahima Camara",
+      "metier": "electricite",
+      "specialites": [
+        "Câblage",
+        "Maintenance"
+      ],
+      "zone": "Matam",
+      "zonesIntervention": [
+        "Matam",
+        "Ratoma"
+      ],
+      "note": 4.6,
+      "nbAvis": 18,
+      "niveau": 2,
+      "disponible": true,
+      "experience": 5,
+      "missions": 31,
+      "telephone": "+224 620 00 00 02",
+      "bio": "Électricien spécialisé dans le câblage de bâtiments neufs et la mise aux normes.",
+      "disponibilites": "Lundi – Vendredi (8h – 17h)",
+      "realisations": [
+        {
+          "titre": "Câblage immeuble",
+          "categorie": "Câblage",
+          "image": "/images/chantier.jpg"
+        },
+        {
+          "titre": "Mise aux normes",
+          "categorie": "Maintenance",
+          "image": "/images/electricien-tableau.jpg"
+        }
+      ],
+      "inscrit": "3 févr. 2026",
+      "statut": "actif",
+      "avis": [
+        {
+          "auteur": "Mariama Barry",
+          "note": 5,
+          "commentaire": "Très bon conseil, travail soigné.",
+          "date": "8 oct. 2026"
+        }
+      ]
+    },
+    {
+      "id": "sekou-bah",
+      "photo": "/images/technicien-antenne.jpg",
+      "nom": "Sékou Bah",
+      "metier": "electricite",
+      "specialites": [
+        "Dépannage",
+        "Installation"
+      ],
+      "zone": "Dixinn",
+      "zonesIntervention": [
+        "Dixinn",
+        "Kaloum"
+      ],
+      "note": 4.5,
+      "nbAvis": 12,
+      "niveau": 1,
+      "disponible": false,
+      "experience": 3,
+      "missions": 17,
+      "telephone": "+224 620 00 00 03",
+      "bio": "Dépannages rapides à domicile, installation de prises, luminaires et ventilateurs.",
+      "disponibilites": "Tous les jours (9h – 20h)",
+      "realisations": [
+        {
+          "titre": "Installation luminaires",
+          "categorie": "Installation",
+          "image": "/images/electricien-ampoule.jpg"
+        }
+      ],
+      "inscrit": "22 mars 2026",
+      "statut": "actif",
+      "avis": [
+        {
+          "auteur": "Oumar Sylla",
+          "note": 4,
+          "commentaire": "Intervention rapide.",
+          "date": "1 oct. 2026"
+        }
+      ]
+    },
+    {
+      "id": "aissatou-camara",
+      "photo": "/images/electricienne.jpg",
+      "nom": "Aïssatou Camara",
+      "metier": "electricite",
+      "specialites": [
+        "Installation",
+        "Sécurité électrique",
+        "Solaire"
+      ],
+      "zone": "Ratoma",
+      "zonesIntervention": [
+        "Ratoma",
+        "Matoto"
+      ],
+      "note": 4.9,
+      "nbAvis": 27,
+      "niveau": 3,
+      "disponible": true,
+      "experience": 10,
+      "missions": 68,
+      "telephone": "+224 620 00 00 04",
+      "bio": "Électricienne certifiée, spécialisée en sécurité électrique et installations solaires.",
+      "disponibilites": "Lundi – Samedi (8h – 18h)",
+      "realisations": [
+        {
+          "titre": "Kit solaire 3 kW",
+          "categorie": "Solaire",
+          "image": "/images/technicien-antenne.jpg"
+        },
+        {
+          "titre": "Audit sécurité",
+          "categorie": "Sécurité",
+          "image": "/images/electricienne.jpg"
+        },
+        {
+          "titre": "Installation bureau",
+          "categorie": "Installation",
+          "image": "/images/electricien-tableau.jpg"
+        }
+      ],
+      "inscrit": "9 déc. 2025",
+      "statut": "actif",
+      "avis": [
+        {
+          "auteur": "Kadiatou Diallo",
+          "note": 5,
+          "commentaire": "Excellente, très rigoureuse.",
+          "date": "15 oct. 2026"
+        }
+      ]
+    },
+    {
+      "id": "alpha-conde",
+      "photo": "/images/plombier-portrait.jpg",
+      "nom": "Alpha Condé",
+      "metier": "plomberie",
+      "specialites": [
+        "Fuites",
+        "Sanitaires",
+        "Chauffe-eau"
+      ],
+      "zone": "Matoto",
+      "zonesIntervention": [
+        "Matoto",
+        "Matam",
+        "Kagbelen"
+      ],
+      "note": 4.7,
+      "nbAvis": 21,
+      "niveau": 2,
+      "disponible": true,
+      "experience": 7,
+      "missions": 40,
+      "telephone": "+224 620 00 00 05",
+      "bio": "Plombier expérimenté : réparation de fuites, installation de sanitaires et de chauffe-eau.",
+      "disponibilites": "Lundi – Samedi (7h – 18h)",
+      "realisations": [
+        {
+          "titre": "Salle de bain complète",
+          "categorie": "Sanitaires",
+          "image": "/images/plombier-siphon.jpg"
+        },
+        {
+          "titre": "Réparation fuite",
+          "categorie": "Fuites",
+          "image": "/images/plombier-evier.jpg"
+        }
+      ],
+      "inscrit": "18 févr. 2026",
+      "statut": "actif",
+      "avis": [
+        {
+          "auteur": "Aminata Keita",
+          "note": 5,
+          "commentaire": "Fuite réparée en une heure, merci !",
+          "date": "10 oct. 2026"
+        }
+      ]
+    },
+    {
+      "id": "moussa-kouyate",
+      "photo": "/images/chantier.jpg",
+      "nom": "Moussa Kouyaté",
+      "metier": "maconnerie",
+      "specialites": [
+        "Construction",
+        "Carrelage",
+        "Rénovation"
+      ],
+      "zone": "Coyah",
+      "zonesIntervention": [
+        "Coyah",
+        "Dubréka",
+        "Matoto"
+      ],
+      "note": 4.4,
+      "nbAvis": 9,
+      "niveau": 1,
+      "disponible": true,
+      "experience": 12,
+      "missions": 22,
+      "telephone": "+224 620 00 00 06",
+      "bio": "Maçon et carreleur, chantiers de construction et de rénovation.",
+      "disponibilites": "Lundi – Samedi (7h – 17h)",
+      "realisations": [
+        {
+          "titre": "Carrelage terrasse",
+          "categorie": "Carrelage",
+          "image": "/images/chantier.jpg"
+        },
+        {
+          "titre": "Mur de clôture",
+          "categorie": "Construction",
+          "image": "/images/equipe-groupe.jpg"
+        }
+      ],
+      "inscrit": "5 avr. 2026",
+      "statut": "en_attente",
+      "avis": [
+        {
+          "auteur": "Thierno Diallo",
+          "note": 4,
+          "commentaire": "Bon carrelage, finitions correctes.",
+          "date": "28 sept. 2026"
+        }
+      ]
+    },
+    {
+      "id": "mariama-soumah",
+      "photo": "/images/menuisiere.jpg",
+      "nom": "Mariama Soumah",
+      "metier": "menuiserie",
+      "specialites": [
+        "Meubles sur mesure",
+        "Placards",
+        "Agencement"
+      ],
+      "zone": "Kaloum",
+      "zonesIntervention": [
+        "Kaloum",
+        "Dixinn"
+      ],
+      "note": 4.8,
+      "nbAvis": 15,
+      "niveau": 2,
+      "disponible": true,
+      "experience": 6,
+      "missions": 26,
+      "telephone": "+224 620 00 00 07",
+      "bio": "Menuisière : fabrication de meubles sur mesure, placards et agencement d'intérieur.",
+      "disponibilites": "Lundi – Vendredi (9h – 18h)",
+      "realisations": [
+        {
+          "titre": "Placard trois portes",
+          "categorie": "Placards",
+          "image": "/images/menuisiere.jpg"
+        },
+        {
+          "titre": "Table en bois massif",
+          "categorie": "Meubles",
+          "image": "/images/menuisier-marche.jpg"
+        }
+      ],
+      "inscrit": "11 mai 2026",
+      "statut": "actif",
+      "avis": [
+        {
+          "auteur": "Sory Camara",
+          "note": 5,
+          "commentaire": "Placards impeccables, finitions très soignées.",
+          "date": "5 oct. 2026"
+        }
+      ]
+    },
+    {
+      "id": "lansana-traore",
+      "photo": "/images/mecanicien.jpg",
+      "nom": "Lansana Traoré",
+      "metier": "mecanique",
+      "specialites": [
+        "Freinage",
+        "Moteur",
+        "Diagnostic"
+      ],
+      "zone": "Ratoma",
+      "zonesIntervention": [
+        "Ratoma",
+        "Dixinn",
+        "Matam"
+      ],
+      "note": 4.6,
+      "nbAvis": 19,
+      "niveau": 2,
+      "disponible": false,
+      "experience": 9,
+      "missions": 35,
+      "telephone": "+224 620 00 00 08",
+      "bio": "Mécanicien automobile : freinage, entretien moteur et diagnostic électronique.",
+      "disponibilites": "Lundi – Samedi (8h – 18h)",
+      "realisations": [
+        {
+          "titre": "Remplacement des freins",
+          "categorie": "Freinage",
+          "image": "/images/mecanicien.jpg"
+        }
+      ],
+      "inscrit": "27 juin 2026",
+      "statut": "suspendu",
+      "avis": [
+        {
+          "auteur": "Hawa Bangoura",
+          "note": 5,
+          "commentaire": "Voiture comme neuve, freins parfaits !",
+          "date": "9 oct. 2026"
+        }
+      ]
+    },
+    {
+      "id": "fode-camara",
+      "nom": "Fodé Camara",
+      "photo": "/images/menuisier-atelier.jpg",
+      "metier": "menuiserie",
+      "specialites": [
+        "Portes",
+        "Charpente",
+        "Découpe"
+      ],
+      "zone": "Matoto",
+      "zonesIntervention": [
+        "Matoto",
+        "Kagbelen",
+        "Dubréka"
+      ],
+      "note": 4.7,
+      "nbAvis": 14,
+      "niveau": 2,
+      "disponible": true,
+      "experience": 11,
+      "missions": 38,
+      "telephone": "+224 620 00 00 09",
+      "bio": "Menuisier en atelier : portes, fenêtres, charpente et découpe sur mesure.",
+      "disponibilites": "Lundi – Samedi (8h – 18h)",
+      "realisations": [
+        {
+          "titre": "Portes d'entrée en bois",
+          "categorie": "Portes",
+          "image": "/images/menuisier-atelier.jpg"
+        },
+        {
+          "titre": "Charpente de hangar",
+          "categorie": "Charpente",
+          "image": "/images/menuisier-marche.jpg"
+        }
+      ],
+      "inscrit": "8 juil. 2026",
+      "statut": "actif",
+      "avis": [
+        {
+          "auteur": "Mariam Bah",
+          "note": 5,
+          "commentaire": "Porte solide et bien finie, livrée à temps.",
+          "date": "11 oct. 2026"
+        }
+      ]
+    },
+    {
+      "id": "fatoumata-kaba",
+      "nom": "Fatoumata Kaba",
+      "photo": "/images/soudeuse.jpg",
+      "metier": "mecanique",
+      "specialites": [
+        "Soudure",
+        "Ferronnerie",
+        "Portails"
+      ],
+      "zone": "Dixinn",
+      "zonesIntervention": [
+        "Dixinn",
+        "Ratoma",
+        "Kaloum"
+      ],
+      "note": 4.8,
+      "nbAvis": 11,
+      "niveau": 2,
+      "disponible": true,
+      "experience": 6,
+      "missions": 24,
+      "telephone": "+224 620 00 00 10",
+      "bio": "Soudeuse et ferronnière : portails, grilles de sécurité et structures métalliques.",
+      "disponibilites": "Lundi – Samedi (8h – 17h)",
+      "realisations": [
+        {
+          "titre": "Portail coulissant",
+          "categorie": "Portails",
+          "image": "/images/soudeuse.jpg"
+        },
+        {
+          "titre": "Grilles de fenêtres",
+          "categorie": "Ferronnerie",
+          "image": "/images/equipe-usine.jpg"
+        }
+      ],
+      "inscrit": "19 mai 2026",
+      "statut": "actif",
+      "avis": [
+        {
+          "auteur": "Sékou Diallo",
+          "note": 5,
+          "commentaire": "Portail magnifique et très solide.",
+          "date": "14 oct. 2026"
+        }
+      ]
+    }
+  ],
+  "utilisateurs": [
+    {
+      "nom": "Mohamed Camara",
+      "role": "client",
+      "telephone": "+224 621 11 22 33",
+      "zone": "Kaloum",
+      "statut": "actif",
+      "inscrit": "28 sept. 2026"
+    },
+    {
+      "nom": "Fatoumata Sow",
+      "role": "client",
+      "telephone": "+224 622 33 44 55",
+      "zone": "Dixinn",
+      "statut": "actif",
+      "inscrit": "2 août 2026"
+    },
+    {
+      "nom": "Oumar Sylla",
+      "role": "client",
+      "telephone": "+224 623 44 55 66",
+      "zone": "Matam",
+      "statut": "actif",
+      "inscrit": "17 juil. 2026"
+    },
+    {
+      "nom": "Kadiatou Diallo",
+      "role": "client",
+      "telephone": "+224 625 66 77 88",
+      "zone": "Ratoma",
+      "statut": "actif",
+      "inscrit": "30 mai 2026"
+    },
+    {
+      "nom": "Aminata Keita",
+      "role": "client",
+      "telephone": "+224 626 77 88 99",
+      "zone": "Matoto",
+      "statut": "actif",
+      "inscrit": "9 sept. 2026"
+    },
+    {
+      "nom": "Thierno Diallo",
+      "role": "client",
+      "telephone": "+224 627 88 99 00",
+      "zone": "Coyah",
+      "statut": "suspendu",
+      "inscrit": "1 mars 2026"
+    },
+    {
+      "nom": "Hawa Bangoura",
+      "role": "client",
+      "telephone": "+224 628 99 00 11",
+      "zone": "Ratoma",
+      "statut": "actif",
+      "inscrit": "12 oct. 2026"
+    },
+    {
+      "nom": "Aïssatou Barry",
+      "role": "admin",
+      "telephone": "+224 629 00 11 22",
+      "zone": "Kaloum",
+      "statut": "actif",
+      "inscrit": "1 déc. 2025"
+    }
+  ],
+  "client": {
+    "nom": "Mohamed Camara",
+    "prenom": "Mohamed",
+    "telephone": "+224 621 11 22 33",
+    "email": "mohamed.camara@exemple.gn",
+    "zone": "Kaloum",
+    "adresse": "Quartier Almamya, rue KA-020",
+    "type": "Particulier"
+  },
+  "demandes": [
+    {
+      "id": "d-1023",
+      "titre": "Réparation de climatisation",
+      "metier": "climatisation",
+      "description": "Le climatiseur du salon ne refroidit plus et fait un bruit anormal depuis deux jours.",
+      "client": "Mohamed Camara",
+      "clientTel": "+224 621 11 22 33",
+      "technicienId": "mamadou-diallo",
+      "zone": "Kaloum",
+      "adresse": "Quartier Almamya, rue KA-020",
+      "urgence": "urgente",
+      "statut": "en_cours",
+      "date": "20 oct. 2026",
+      "creneau": "21 oct. 2026 · 10h00",
+      "budget": 350000,
+      "dates": [
+        "20 oct. · 10h24",
+        "20 oct. · 11h02",
+        "21 oct. · 10h15",
+        null,
+        null
+      ]
+    },
+    {
+      "id": "d-1019",
+      "titre": "Installation électrique",
+      "metier": "electricite",
+      "description": "Installation de 6 prises et 4 points lumineux dans une extension de la maison.",
+      "client": "Mohamed Camara",
+      "clientTel": "+224 621 11 22 33",
+      "technicienId": "mamadou-diallo",
+      "zone": "Kaloum",
+      "adresse": "Quartier Almamya, rue KA-020",
+      "urgence": "normale",
+      "statut": "acceptee",
+      "date": "18 oct. 2026",
+      "creneau": "24 oct. 2026 · 09h00",
+      "budget": 800000,
+      "dates": [
+        "18 oct. · 09h12",
+        "18 oct. · 14h40",
+        null,
+        null,
+        null
+      ]
+    },
+    {
+      "id": "d-1012",
+      "titre": "Fuite d'eau cuisine",
+      "metier": "plomberie",
+      "description": "Fuite sous l'évier de la cuisine, le tuyau d'évacuation semble fissuré.",
+      "client": "Mohamed Camara",
+      "clientTel": "+224 621 11 22 33",
+      "technicienId": "alpha-conde",
+      "zone": "Kaloum",
+      "adresse": "Quartier Almamya, rue KA-020",
+      "urgence": "urgente",
+      "statut": "terminee",
+      "date": "10 oct. 2026",
+      "creneau": "10 oct. 2026 · 16h00",
+      "budget": 150000,
+      "dates": [
+        "10 oct. · 08h03",
+        "10 oct. · 08h30",
+        "10 oct. · 16h05",
+        "10 oct. · 17h20",
+        null
+      ]
+    },
+    {
+      "id": "d-1004",
+      "titre": "Peinture appartement",
+      "metier": "peinture",
+      "description": "Peinture de deux chambres et du couloir (environ 60 m²).",
+      "client": "Mohamed Camara",
+      "clientTel": "+224 621 11 22 33",
+      "zone": "Kaloum",
+      "adresse": "Quartier Almamya, rue KA-020",
+      "urgence": "normale",
+      "statut": "envoyee",
+      "date": "19 oct. 2026",
+      "creneau": "À convenir",
+      "dates": [
+        "19 oct. · 18h47",
+        null,
+        null,
+        null,
+        null
+      ]
+    },
+    {
+      "id": "d-0998",
+      "titre": "Fabrication de placards",
+      "metier": "menuiserie",
+      "description": "Fabrication et pose de deux placards dans les chambres.",
+      "client": "Mohamed Camara",
+      "clientTel": "+224 621 11 22 33",
+      "technicienId": "mariama-soumah",
+      "zone": "Kaloum",
+      "adresse": "Immeuble Kaloum Center, 2e étage",
+      "urgence": "normale",
+      "statut": "terminee",
+      "evaluee": true,
+      "date": "28 sept. 2026",
+      "creneau": "30 sept. 2026 · 09h00",
+      "budget": 1200000,
+      "dates": [
+        "28 sept. · 10h00",
+        "28 sept. · 12h10",
+        "30 sept. · 09h05",
+        "30 sept. · 15h30",
+        "30 sept. · 19h02"
+      ]
+    },
+    {
+      "id": "d-0991",
+      "titre": "Menuiserie porte d'entrée",
+      "metier": "menuiserie",
+      "description": "Réparation de la porte d'entrée qui ferme mal.",
+      "client": "Mohamed Camara",
+      "clientTel": "+224 621 11 22 33",
+      "zone": "Kaloum",
+      "adresse": "Quartier Almamya, rue KA-020",
+      "urgence": "normale",
+      "statut": "annulee",
+      "date": "20 sept. 2026",
+      "creneau": "—",
+      "dates": [
+        "20 sept. · 11h00",
+        null,
+        null,
+        null,
+        null
+      ]
+    },
+    {
+      "id": "d-1027",
+      "titre": "Panne de courant partielle",
+      "metier": "electricite",
+      "description": "Une partie de la maison n'a plus de courant depuis ce matin, le disjoncteur saute.",
+      "client": "Fatoumata Sow",
+      "clientTel": "+224 622 33 44 55",
+      "zone": "Dixinn",
+      "adresse": "Dixinn Port, près de la mosquée",
+      "urgence": "urgente",
+      "statut": "envoyee",
+      "date": "22 oct. 2026",
+      "creneau": "Aujourd'hui · dès que possible",
+      "budget": 200000,
+      "dates": [
+        "22 oct. · 07h41",
+        null,
+        null,
+        null,
+        null
+      ]
+    },
+    {
+      "id": "d-1026",
+      "titre": "Installation de ventilateurs",
+      "metier": "electricite",
+      "description": "Pose de 3 ventilateurs de plafond dans un appartement.",
+      "client": "Oumar Sylla",
+      "clientTel": "+224 623 44 55 66",
+      "zone": "Matam",
+      "adresse": "Matam, carrefour Bonfi",
+      "urgence": "normale",
+      "statut": "envoyee",
+      "date": "21 oct. 2026",
+      "creneau": "25 oct. 2026 · 14h00",
+      "budget": 300000,
+      "dates": [
+        "21 oct. · 20h15",
+        null,
+        null,
+        null,
+        null
+      ]
+    },
+    {
+      "id": "d-1015",
+      "titre": "Tableau électrique",
+      "metier": "electricite",
+      "description": "Remplacement d'un tableau électrique vétuste.",
+      "client": "Abdoulaye Bah",
+      "clientTel": "+224 624 55 66 77",
+      "zone": "Kaloum",
+      "adresse": "Boulbinet",
+      "urgence": "normale",
+      "statut": "terminee",
+      "date": "12 oct. 2026",
+      "creneau": "13 oct. 2026 · 08h00",
+      "budget": 1500000,
+      "dates": [
+        "12 oct. · 09h00",
+        "12 oct. · 10h00",
+        "13 oct. · 08h10",
+        "13 oct. · 16h45",
+        null
+      ]
+    }
+  ]
+}
