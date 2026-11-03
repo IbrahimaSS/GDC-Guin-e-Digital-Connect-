@@ -19,6 +19,7 @@ import {
 import {
   DisponibiliteDto,
   ModifierProfilTechnicienDto,
+  ModifierRealisationDto,
   RealisationDto,
   RechercheTechniciensDto,
 } from './techniciens.dto.js';
@@ -78,6 +79,17 @@ export class TechniciensController {
     @Body() dto: RealisationDto,
   ) {
     return this.techniciens.ajouterRealisation(u.id, dto);
+  }
+
+  @ApiBearerAuth()
+  @Roles('TECHNICIEN')
+  @Patch('moi/realisations/:id')
+  modifierRealisation(
+    @Utilisateur() u: UtilisateurConnecte,
+    @Param('id') id: string,
+    @Body() dto: ModifierRealisationDto,
+  ) {
+    return this.techniciens.modifierRealisation(u.id, id, dto);
   }
 
   @ApiBearerAuth()
