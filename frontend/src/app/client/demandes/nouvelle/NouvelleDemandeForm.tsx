@@ -14,7 +14,10 @@ import type { Point } from "@/lib/geo";
 import { apiActive, texteErreur } from "@/lib/api";
 import { idZone, useZonesApi } from "@/lib/auth";
 import { creerDemande } from "@/lib/demandes";
+import { ACCEPTE, televerser } from "@/lib/fichiers";
 import { useSession } from "@/lib/session";
+import { useApi } from "@/lib/useApi";
+import Image from "next/image";
 
 export const CRENEAUX = { matin: "Matin (8h – 12h)", aprem: "Après-midi (12h – 17h)", soir: "Soir (17h – 20h)", flex: "Flexible" };
 
@@ -39,6 +42,9 @@ export default function NouvelleDemandeForm() {
   const [envoi, setEnvoi] = useState(false);
   const [erreur, setErreur] = useState("");
   const zones = useZonesApi(apiActive);
+  const [photoEnCours, setPhotoEnCours] = useState(false);
+  const adressesEnregistrees =
+    useApi<{ id: string; label: string; texte: string; zone: { nom: string } | null; lat: number | null; lng: number | null }[]>(apiActive ? "/moi/adresses" : null).donnees ?? [];
 
   useGSAP(
     () => {
@@ -85,6 +91,7 @@ export default function NouvelleDemandeForm() {
           dateSouhaitee: date || undefined,
           creneau: CRENEAUX[creneau],
           budget: budget ? Number(budget) : undefined,
+          photos,
           technicienId: params.get("technicien") ?? undefined,
         });
       } catch (err) {
@@ -172,25 +179,50 @@ export default function NouvelleDemandeForm() {
                 <div className="flex flex-wrap gap-3">
                   {photos.map((p) => (
                     <div key={p} className="relative flex size-20 items-center justify-center rounded-xl bg-gradient-to-br from-brand-100 to-accent-100 text-[10px] font-medium text-brand-700">
-                      {p}
+                      {/* Avec l'API, p est l'adresse de la photo envoyée ; en démonstration, son nom. */}
+                      {p.startsWith("http") ? (
+                        <span className="relative block size-full overflow-hidden rounded-xl">
+                          <Image src={p} alt="" fill unoptimized className="object-cover" />
+                        </span>
+                      ) : (
+                        p
+                      )}
                       <button type="button" onClick={() => setPhotos(photos.filter((x) => x !== p))} className="absolute -right-1.5 -top-1.5 rounded-full bg-slate-900 p-0.5 text-white" aria-label="Retirer">
                         <X className="size-3" />
                       </button>
                     </div>
                   ))}
-                  <label className="flex size-20 cursor-pointer flex-col items-center justify-center gap-1 rounded-xl border-2 border-dashed border-slate-300 text-xs text-slate-500 transition hover:border-brand-500 hover:text-brand-600">
-                    <Camera className="size-5" />
-                    Ajouter
-                    <input
-                      type="file"
-                      accept="image/*"
-                      className="sr-only"
-                      onChange={(e) => {
-                        const f = e.target.files?.[0];
-                        if (f) setPhotos([...photos, f.name.slice(0, 10)]);
-                      }}
-                    />
-                  </label>
+                  {photos.length < 6 && (
+                    <label
+                      className={cn(
+                        "flex size-20 cursor-pointer flex-col items-center justify-center gap-1 rounded-xl border-2 border-dashed border-slate-300 text-xs text-slate-500 transition hover:border-brand-500 hover:text-brand-600",
+                        photoEnCours && "pointer-events-none opacity-50",
+                      )}
+                    >
+                      <Camera className="size-5" />
+                      {photoEnCours ? "Envoi…" : "Ajouter"}
+                      <input
+                        type="file"
+                        accept={ACCEPTE.photo}
+                        className="sr-only"
+                        onChange={async (e) => {
+                          const f = e.target.files?.[0];
+                          e.target.value = "";
+                          if (!f) return;
+                          if (!apiActive) return setPhotos([...photos, f.name.slice(0, 10)]);
+                          setPhotoEnCours(true);
+                          try {
+                            const url = await televerser(f, "photo");
+                            setPhotos((l) => [...l, url]);
+                          } catch (err) {
+                            setErreur(texteErreur(err));
+                          } finally {
+                            setPhotoEnCours(false);
+                          }
+                        }}
+                      />
+                    </label>
+                  )}
                 </div>
               </div>
             </div>
@@ -219,6 +251,30 @@ export default function NouvelleDemandeForm() {
                 </Select>
               </Field>
             </div>
+            {adressesEnregistrees.length > 0 && (
+              <div className="mt-5">
+                <p className="mb-2 text-sm font-semibold text-slate-700">Mes adresses</p>
+                <div className="flex flex-wrap gap-2">
+                  {adressesEnregistrees.map((a) => (
+                    <button
+                      key={a.id}
+                      type="button"
+                      onClick={() => {
+                        setAdresse(a.texte);
+                        if (a.zone) setZone(a.zone.nom);
+                        if (a.lat != null && a.lng != null) setPoint({ lat: a.lat, lng: a.lng });
+                      }}
+                      className={cn(
+                        "rounded-full border px-3 py-1.5 text-sm font-medium transition",
+                        adresse === a.texte ? "border-brand-600 bg-brand-50 text-brand-700" : "border-slate-300 text-slate-600 hover:border-brand-500",
+                      )}
+                    >
+                      {a.label} · {a.texte}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
             <div className="mt-5">
               <AdressePicker
                 zone={zone}

@@ -9,7 +9,8 @@ import { Button, Card, Field, Input, PageHeader, Select } from "@/components/ui"
 import { Modal, Toggle } from "@/components/ui/interactive";
 import { api, apiActive, texteErreur } from "@/lib/api";
 import { CLIENT_CONNECTE, DEMANDES, DEMANDES_RECUES, TECHNICIEN_CONNECTE } from "@/lib/data";
-import { lireSession, useSession } from "@/lib/session";
+import { fermerSession, lireSession, useSession } from "@/lib/session";
+import { useRouter } from "next/navigation";
 import { usePersistant } from "@/lib/stockage";
 import { dateFichier, telecharger } from "@/lib/telechargement";
 import { useApi } from "@/lib/useApi";
@@ -47,14 +48,72 @@ function nomAppareil(ua: string | null) {
 
 const PREFERENCES = { notifs: { sms: true, whatsapp: true, email: false, promo: false }, securite: { deuxEtapes: true, visible: true } };
 
+interface PreferencesApi {
+  sms: boolean;
+  whatsapp: boolean;
+  email: boolean;
+  actualites: boolean;
+  visible?: boolean;
+}
+
 export default function SettingsView({ role }: { role: "client" | "technicien" }) {
-  // Préférences conservées sur cet appareil (le serveur ne les gère pas encore).
+  const prefsApi = useApi<PreferencesApi>(apiActive ? "/moi/preferences" : null).donnees;
+  // Le formulaire s'ouvre une fois les préférences du compte chargées (avec l'API).
+  if (apiActive && !prefsApi) return <div className="h-96 animate-pulse rounded-2xl bg-slate-100" aria-busy="true" />;
+  return <Parametres role={role} prefsApi={prefsApi} />;
+}
+
+function Parametres({ role, prefsApi }: { role: "client" | "technicien"; prefsApi?: PreferencesApi }) {
+  const router = useRouter();
+  // En démonstration, les préférences sont conservées sur cet appareil.
   const [preferences, setPreferences] = usePersistant(`preferences-${role}`, PREFERENCES);
-  const [notifs, setNotifs] = useState(preferences.notifs);
-  const [securite, setSecurite] = useState(preferences.securite);
+  const initiales = prefsApi
+    ? { notifs: { sms: prefsApi.sms, whatsapp: prefsApi.whatsapp, email: prefsApi.email, promo: prefsApi.actualites }, securite: { deuxEtapes: true, visible: prefsApi.visible ?? true } }
+    : preferences;
+  const [notifs, setNotifs] = useState(initiales.notifs);
+  const [securite, setSecurite] = useState(initiales.securite);
   const [suppression, setSuppression] = useState(false);
+  const [envoi, setEnvoi] = useState(false);
   const session = useSession();
   const sessions = useApi<SessionAppareil[]>(apiActive ? "/moi/sessions" : null);
+
+  async function enregistrer() {
+    if (!apiActive) {
+      setPreferences({ notifs, securite });
+      return toast("Paramètres enregistrés");
+    }
+    setEnvoi(true);
+    try {
+      await api("/moi/preferences", {
+        methode: "PUT",
+        corps: { sms: notifs.sms, whatsapp: notifs.whatsapp, email: notifs.email, actualites: notifs.promo, ...(role === "technicien" && { visible: securite.visible }) },
+      });
+      toast("Paramètres enregistrés");
+    } catch (e) {
+      toast(texteErreur(e), "error");
+    } finally {
+      setEnvoi(false);
+    }
+  }
+
+  async function supprimerCompte() {
+    if (!apiActive) {
+      setSuppression(false);
+      return toast("Demande de suppression enregistrée", "info");
+    }
+    setEnvoi(true);
+    try {
+      await api("/moi", { methode: "DELETE" });
+      fermerSession();
+      toast("Votre compte a été supprimé. Merci d'avoir utilisé GDC.", "info");
+      router.push("/");
+    } catch (e) {
+      setSuppression(false);
+      toast(texteErreur(e), "error");
+    } finally {
+      setEnvoi(false);
+    }
+  }
 
   async function deconnecterAutres() {
     if (!apiActive) return toast("Les autres appareils ont été déconnectés");
@@ -124,12 +183,18 @@ export default function SettingsView({ role }: { role: "client" | "technicien" }
         </Section>
 
         <Section icon={Lock} title="Sécurité et confidentialité" text="Protégez l'accès à votre compte.">
-          <Toggle
-            checked={securite.deuxEtapes}
-            onChange={(v) => setSecurite({ ...securite, deuxEtapes: v })}
-            label="Code de confirmation à chaque connexion"
-            description="Un code SMS est demandé sur chaque nouvel appareil."
-          />
+          {apiActive ? (
+            <p className="flex items-start gap-2 rounded-xl bg-emerald-50 p-3 text-sm text-emerald-800">
+              <Lock className="mt-0.5 size-4 shrink-0" /> Chaque connexion sur un nouvel appareil demande un code reçu par SMS : c&apos;est toujours activé.
+            </p>
+          ) : (
+            <Toggle
+              checked={securite.deuxEtapes}
+              onChange={(v) => setSecurite({ ...securite, deuxEtapes: v })}
+              label="Code de confirmation à chaque connexion"
+              description="Un code SMS est demandé sur chaque nouvel appareil."
+            />
+          )}
           {role === "technicien" && (
             <Toggle
               checked={securite.visible}
@@ -203,14 +268,7 @@ export default function SettingsView({ role }: { role: "client" | "technicien" }
       </Reveal>
 
       <div className="sticky bottom-4 mt-6 flex justify-end">
-        <Button
-          size="lg"
-          onClick={() => {
-            setPreferences({ notifs, securite });
-            toast("Paramètres enregistrés");
-          }}
-          className="shadow-xl"
-        >
+        <Button size="lg" onClick={enregistrer} disabled={envoi} className="shadow-xl">
           Enregistrer les modifications
         </Button>
       </div>
@@ -224,30 +282,14 @@ export default function SettingsView({ role }: { role: "client" | "technicien" }
             <Button variant="ghost" onClick={() => setSuppression(false)}>
               Annuler
             </Button>
-            {apiActive ? (
-              <a
-                href={`mailto:support@gdc.gn?subject=${encodeURIComponent("Suppression de mon compte GDC")}&body=${encodeURIComponent(`Numéro du compte : ${session?.utilisateur.telephone ?? ""}`)}`}
-                className="inline-flex items-center justify-center gap-2 rounded-xl bg-red-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-red-700"
-                onClick={() => setSuppression(false)}
-              >
-                Écrire au support
-              </a>
-            ) : (
-              <Button
-                variant="danger"
-                onClick={() => {
-                  setSuppression(false);
-                  toast("Demande de suppression enregistrée", "info");
-                }}
-              >
-                Oui, supprimer
-              </Button>
-            )}
+            <Button variant="danger" onClick={supprimerCompte} disabled={envoi}>
+              {envoi ? "Suppression…" : "Oui, supprimer"}
+            </Button>
           </>
         }
       >
         {apiActive
-          ? "La suppression est traitée par l'équipe GDC, pour vérifier qu'aucune mission ni aucun paiement n'est en cours. Écrivez-nous depuis l'adresse ou le numéro de votre compte : vos données seront supprimées sous 30 jours."
+          ? "Vos informations personnelles (nom, téléphone, e-mail, photos, adresses) sont effacées immédiatement et vous êtes déconnecté. L'historique de vos missions reste visible, de façon anonyme, pour vos interlocuteurs. Impossible si une mission ou un paiement est en cours."
           : "Toutes vos données seront supprimées sous 30 jours. Vous pouvez annuler en vous reconnectant pendant ce délai."}
       </Modal>
     </>

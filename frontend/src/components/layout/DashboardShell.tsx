@@ -303,7 +303,7 @@ function UserMenu({ role }: { role: Role }) {
         className="flex items-center gap-2.5 rounded-xl p-1 pr-2 transition hover:bg-slate-100"
         aria-expanded={open}
       >
-        <Avatar nom={user.nom} className="size-9 text-xs" />
+        <Avatar nom={user.nom} photo={(apiActive && session?.utilisateur.photoUrl) || undefined} className="size-9 text-xs" />
         <span className="hidden text-left sm:block">
           <span className="block text-sm font-bold leading-tight text-slate-900">{user.nom}</span>
           <span className="block text-xs text-slate-500">{user.role}</span>

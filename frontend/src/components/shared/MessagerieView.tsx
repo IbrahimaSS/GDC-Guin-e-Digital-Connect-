@@ -11,6 +11,7 @@ import ChargementListe from "@/components/shared/ChargementListe";
 import { StatutDemandeBadge } from "@/components/shared/status";
 import { Avatar, Card, cn, EmptyState } from "@/components/ui";
 import { apiActive, texteErreur } from "@/lib/api";
+import { ACCEPTE, televerser, verifierFichier } from "@/lib/fichiers";
 import { useApercu, useConversations, useFil, type ConversationVue } from "@/lib/messagerie";
 import { REPONSES_RAPIDES, type Auteur } from "@/lib/messages";
 
@@ -19,6 +20,7 @@ function Fil({ conv, vue, onLu }: { conv: ConversationVue; vue: Auteur; onLu: ()
   const [texte, setTexte] = useState("");
   const [photo, setPhoto] = useState<string | null>(null);
   const [envoi, setEnvoi] = useState(false);
+  const [photoEnCours, setPhotoEnCours] = useState(false);
   const fil = useRef<HTMLDivElement>(null);
   const nbPrecedent = useRef(messages.length);
   const interlocuteur = conv.interlocuteur;
@@ -135,27 +137,40 @@ function Fil({ conv, vue, onLu }: { conv: ConversationVue; vue: Auteur; onLu: ()
           </div>
         )}
         <form onSubmit={soumettre} className="flex items-end gap-2">
-          {/* TODO : envoi de photos avec l'API, une fois le stockage des fichiers en place. */}
-          {!apiActive && (
-            <label className="cursor-pointer rounded-xl p-2.5 text-slate-500 transition-colors hover:bg-slate-100 hover:text-brand-600" aria-label="Joindre une photo">
-              <ImagePlus className="size-5" />
-              <input
-                type="file"
-                accept="image/*"
-                className="sr-only"
-                onChange={(e) => {
-                  const f = e.target.files?.[0];
-                  e.target.value = "";
-                  if (!f) return;
-                  if (f.size > 5 * 1024 * 1024) return toast("Photo trop lourde (5 Mo maximum).", "error");
-                  // Conservée en data URL pour rester visible après rechargement de la page.
-                  const lecteur = new FileReader();
-                  lecteur.onload = () => setPhoto(String(lecteur.result));
-                  lecteur.readAsDataURL(f);
-                }}
-              />
-            </label>
-          )}
+          <label
+            className={cn("cursor-pointer rounded-xl p-2.5 text-slate-500 transition-colors hover:bg-slate-100 hover:text-brand-600", photoEnCours && "pointer-events-none opacity-50")}
+            aria-label="Joindre une photo"
+          >
+            {photoEnCours ? <span className="block size-5 animate-spin rounded-full border-2 border-slate-300 border-t-brand-600" /> : <ImagePlus className="size-5" />}
+            <input
+              type="file"
+              accept={ACCEPTE.photo}
+              className="sr-only"
+              onChange={async (e) => {
+                const f = e.target.files?.[0];
+                e.target.value = "";
+                if (!f) return;
+                const probleme = verifierFichier(f, "photo");
+                if (probleme) return toast(probleme, "error");
+                if (apiActive) {
+                  // La photo part tout de suite sur le serveur ; le message en garde l'adresse.
+                  setPhotoEnCours(true);
+                  try {
+                    setPhoto(await televerser(f, "photo"));
+                  } catch (err) {
+                    toast(texteErreur(err), "error");
+                  } finally {
+                    setPhotoEnCours(false);
+                  }
+                  return;
+                }
+                // Démonstration : conservée en data URL pour rester visible après rechargement de la page.
+                const lecteur = new FileReader();
+                lecteur.onload = () => setPhoto(String(lecteur.result));
+                lecteur.readAsDataURL(f);
+              }}
+            />
+          </label>
           <textarea
             value={texte}
             onChange={(e) => {

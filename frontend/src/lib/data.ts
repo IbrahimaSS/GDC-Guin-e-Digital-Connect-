@@ -399,6 +399,8 @@ export interface Demande {
     /** Code d'intervention et contenu du QR code : remis au client seulement, une fois la demande acceptée. */
     code?: string;
     qr?: string;
+    /** Photos jointes à la demande */
+    photos?: string[];
   };
 }
 

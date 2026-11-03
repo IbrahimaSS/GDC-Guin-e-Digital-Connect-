@@ -1,6 +1,7 @@
 "use client";
 
 import { CalendarDays, ImageIcon, MapPin, MessageSquareText, MessageCircle, Phone, Star, Wallet, XCircle, Zap } from "lucide-react";
+import Image from "next/image";
 import Link from "next/link";
 import { useState } from "react";
 import Reveal from "@/components/motion/Reveal";
@@ -103,14 +104,31 @@ export default function DetailDemande({ demande, onChange }: { demande: Demande;
                 </div>
               ))}
             </dl>
-            <p className="mb-2 mt-6 text-sm font-semibold text-slate-700">Photos jointes</p>
-            <div className="flex gap-3">
-              {["from-brand-200 to-brand-400", "from-accent-100 to-accent-400"].map((g) => (
-                <div key={g} className={`flex size-24 items-center justify-center rounded-xl bg-gradient-to-br ${g} text-white/80`}>
-                  <ImageIcon className="size-6" />
+            {demande.api ? (
+              demande.api.photos && demande.api.photos.length > 0 && (
+                <>
+                  <p className="mb-2 mt-6 text-sm font-semibold text-slate-700">Photos jointes</p>
+                  <div className="flex flex-wrap gap-3">
+                    {demande.api.photos.map((p) => (
+                      <a key={p} href={p} target="_blank" rel="noreferrer" className="relative block size-24 overflow-hidden rounded-xl ring-1 ring-slate-200">
+                        <Image src={p} alt="Photo jointe à la demande" fill unoptimized className="object-cover" />
+                      </a>
+                    ))}
+                  </div>
+                </>
+              )
+            ) : (
+              <>
+                <p className="mb-2 mt-6 text-sm font-semibold text-slate-700">Photos jointes</p>
+                <div className="flex gap-3">
+                  {["from-brand-200 to-brand-400", "from-accent-100 to-accent-400"].map((g) => (
+                    <div key={g} className={`flex size-24 items-center justify-center rounded-xl bg-gradient-to-br ${g} text-white/80`}>
+                      <ImageIcon className="size-6" />
+                    </div>
+                  ))}
                 </div>
-              ))}
-            </div>
+              </>
+            )}
           </Card>
 
           {tech ? (

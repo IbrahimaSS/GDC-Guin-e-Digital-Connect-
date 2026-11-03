@@ -86,7 +86,7 @@ export function versDemande(d: DemandeApi): Demande {
     budget: d.budget ?? undefined,
     evaluee: Boolean(d.avis),
     chronologie: chronologie(d, statut),
-    api: { technicien: d.technicien ?? undefined, code: d.codeIntervention, qr: d.qrIntervention },
+    api: { technicien: d.technicien ?? undefined, code: d.codeIntervention, qr: d.qrIntervention, photos: d.photos },
   };
 }
 
@@ -154,6 +154,8 @@ export interface NouvelleDemande {
   dateSouhaitee?: string;
   creneau?: string;
   budget?: number;
+  /** Adresses des photos déjà envoyées (televerser) */
+  photos?: string[];
   technicienId?: string;
 }
 

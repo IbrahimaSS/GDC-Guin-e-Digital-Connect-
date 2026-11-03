@@ -31,14 +31,16 @@ function messageErreur(donnees: unknown, statut: number): string {
 }
 
 async function appeler(chemin: string, { methode = "GET", corps, auth = true }: Options, jeton?: string) {
+  // Un envoi de fichier (FormData) part tel quel : le navigateur fixe lui-même l'en-tête multipart.
+  const formulaire = corps instanceof FormData;
   try {
     return await fetch(`${API_URL}/api${chemin}`, {
       method: methode,
       headers: {
-        ...(corps !== undefined && { "Content-Type": "application/json" }),
+        ...(corps !== undefined && !formulaire && { "Content-Type": "application/json" }),
         ...(auth && jeton && { Authorization: `Bearer ${jeton}` }),
       },
-      body: corps !== undefined ? JSON.stringify(corps) : undefined,
+      body: formulaire ? corps : corps !== undefined ? JSON.stringify(corps) : undefined,
     });
   } catch {
     throw new ErreurApi("Impossible de joindre le serveur GDC. Vérifiez votre connexion internet.", 0);

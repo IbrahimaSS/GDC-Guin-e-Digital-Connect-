@@ -10,16 +10,30 @@ import { useVerificationNumero } from "@/components/auth/useVerificationNumero";
 import { enter, gsap, prefersReducedMotion, useGSAP } from "@/components/motion/gsap";
 import { toast } from "@/components/motion/Toaster";
 import { Button, cn, Field, Input, MetierIcon, Select, Textarea } from "@/components/ui";
-import { apiActive, texteErreur } from "@/lib/api";
+import { api, apiActive, texteErreur } from "@/lib/api";
 import { dejaInscrit, idZone, inscrire, useZonesApi } from "@/lib/auth";
-import { METIERS, ZONES, type MetierId } from "@/lib/data";
-import { ESPACE_ROLE, useNumeroVerifie } from "@/lib/session";
+import { getMetier, METIERS, ZONES, type MetierId } from "@/lib/data";
+import { ACCEPTE, televerser, verifierFichier, type TypeFichier } from "@/lib/fichiers";
+import { ESPACE_ROLE, mettreAJourUtilisateur, useNumeroVerifie, type UtilisateurApi } from "@/lib/session";
 
 const ETAPES = ["Identité", "Métier", "Documents"];
 const SPECIALITES = ["Installation", "Dépannage", "Maintenance", "Rénovation", "Conseil", "Urgences"];
 
-function DropZone({ icon: Icon, titre, texte }: { icon: typeof IdCard; titre: string; texte: string }) {
-  const [fichier, setFichier] = useState<string | null>(null);
+type Documents = Record<"identite" | "diplomes" | "realisations" | "photo", File[]>;
+
+interface PropsDropZone {
+  icon: typeof IdCard;
+  titre: string;
+  texte: string;
+  fichiers: File[];
+  onChange: (f: File[]) => void;
+  type: TypeFichier;
+  /** Nombre maximum de fichiers (1 par défaut) */
+  max?: number;
+}
+
+function DropZone({ icon: Icon, titre, texte, fichiers, onChange, type, max = 1 }: PropsDropZone) {
+  const fichier = fichiers.length ? (fichiers.length > 1 ? `${fichiers.length} fichiers` : fichiers[0].name) : null;
   return (
     <label
       className={cn(
@@ -35,9 +49,41 @@ function DropZone({ icon: Icon, titre, texte }: { icon: typeof IdCard; titre: st
         <span className="block truncate text-xs text-slate-500">{fichier ?? texte}</span>
       </span>
       <span className="text-xs font-semibold text-brand-600">{fichier ? "Changer" : "Ajouter"}</span>
-      <input type="file" className="sr-only" accept="image/*,.pdf" onChange={(e) => setFichier(e.target.files?.[0]?.name ?? null)} />
+      <input
+        type="file"
+        className="sr-only"
+        accept={ACCEPTE[type]}
+        multiple={max > 1}
+        onChange={(e) => {
+          const choisis = Array.from(e.target.files ?? []).slice(0, max);
+          e.target.value = "";
+          const probleme = choisis.map((f) => verifierFichier(f, type)).find(Boolean);
+          if (probleme) return toast(probleme, "error");
+          onChange(choisis);
+        }}
+      />
     </label>
   );
+}
+
+/**
+ * Après la création du compte : pièces privées et demande de vérification niveau 1,
+ * puis photo de profil et réalisations (publiques).
+ */
+async function envoyerDocuments(d: Documents, metier: string) {
+  const pieces = [
+    ...(await Promise.all(d.identite.map(async (f) => ({ type: "piece_identite", url: await televerser(f, "piece") })))),
+    ...(await Promise.all(d.diplomes.map(async (f) => ({ type: "diplome", url: await televerser(f, "piece") })))),
+  ];
+  if (pieces.length) await api("/verifications", { methode: "POST", corps: { niveau: 1, pieces, message: "Dossier envoyé à l'inscription." } });
+  if (d.photo[0]) {
+    const photoUrl = await televerser(d.photo[0], "photo");
+    mettreAJourUtilisateur(await api<UtilisateurApi>("/moi", { methode: "PATCH", corps: { photoUrl } }));
+  }
+  for (const [i, f] of d.realisations.entries()) {
+    const imageUrl = await televerser(f, "photo");
+    await api("/techniciens/moi/realisations", { methode: "POST", corps: { titre: `Réalisation ${i + 1}`, categorie: metier, imageUrl } });
+  }
 }
 
 export default function InscriptionTechnicienForm() {
@@ -58,6 +104,8 @@ export default function InscriptionTechnicienForm() {
   const [dejaCompte, setDejaCompte] = useState(false);
   const [envoi, setEnvoi] = useState(false);
   const [erreur, setErreur] = useState("");
+  // Documents choisis : envoyés une fois le compte créé (l'envoi exige d'être connecté).
+  const [documents, setDocuments] = useState<Documents>({ identite: [], diplomes: [], realisations: [], photo: [] });
   const zonesApi = useZonesApi(apiActive);
   const champ = (cle: keyof typeof infos) => ({
     value: infos[cle],
@@ -76,7 +124,13 @@ export default function InscriptionTechnicienForm() {
         entreprise: infos.entreprise.trim() || undefined,
         technicien: { metierId: metier, specialites, experience: infos.experience, zones: ids(zones), bio: infos.bio.trim() || undefined },
       });
-      toast("Profil créé ! Envoyez vos pièces depuis « Vérification » pour être visible des clients.");
+      // Compte créé : envoi des documents. Un échec ici ne bloque pas l'inscription (à refaire depuis l'espace technicien).
+      try {
+        await envoyerDocuments(documents, getMetier(metier).label);
+        toast("Profil créé ! Votre dossier de vérification niveau 1 est en cours d'examen.");
+      } catch (e) {
+        toast(`Profil créé, mais l'envoi des documents a échoué (${texteErreur(e)}). Renvoyez-les depuis « Vérification ».`, "error");
+      }
       router.push("/technicien");
     },
     compteExistant(utilisateur) {
@@ -109,6 +163,7 @@ export default function InscriptionTechnicienForm() {
       toast("Profil créé ! Votre dossier de vérification niveau 1 est en cours.");
       return router.push("/technicien");
     }
+    if (!documents.identite.length) return setErreur("Ajoutez votre pièce d'identité : elle est nécessaire pour être visible des clients.");
     setErreur("");
     setDejaCompte(false);
     setEnvoi(true);
@@ -280,10 +335,10 @@ export default function InscriptionTechnicienForm() {
           {etape === 2 && (
             <>
               <p className="text-sm text-slate-500">Ces documents servent uniquement à la vérification de votre profil. Ils ne sont jamais publiés.</p>
-              <DropZone icon={IdCard} titre="Pièce d'identité *" texte="CNI ou passeport – photo recto/verso" />
-              <DropZone icon={GraduationCap} titre="Diplômes ou attestations" texte="Recommandé pour le niveau 2" />
-              <DropZone icon={ImagePlus} titre="Photos de réalisations" texte="Jusqu'à 10 photos de vos travaux" />
-              <DropZone icon={FileUp} titre="Photo de profil" texte="Visage bien visible, fond clair" />
+              <DropZone icon={IdCard} titre="Pièce d'identité *" texte="CNI ou passeport – photo recto/verso" type="piece" max={2} fichiers={documents.identite} onChange={(f) => setDocuments((d) => ({ ...d, identite: f }))} />
+              <DropZone icon={GraduationCap} titre="Diplômes ou attestations" texte="Recommandé pour le niveau 2" type="piece" max={5} fichiers={documents.diplomes} onChange={(f) => setDocuments((d) => ({ ...d, diplomes: f }))} />
+              <DropZone icon={ImagePlus} titre="Photos de réalisations" texte="Jusqu'à 10 photos de vos travaux" type="photo" max={10} fichiers={documents.realisations} onChange={(f) => setDocuments((d) => ({ ...d, realisations: f }))} />
+              <DropZone icon={FileUp} titre="Photo de profil" texte="Visage bien visible, fond clair" type="photo" fichiers={documents.photo} onChange={(f) => setDocuments((d) => ({ ...d, photo: f }))} />
               <label className="flex items-start gap-3 pt-2 text-sm text-slate-600">
                 <input required type="checkbox" className="mt-0.5 size-4 accent-brand-600" />
                 Je certifie l&apos;exactitude des informations et j&apos;accepte les conditions d&apos;utilisation de GDC.

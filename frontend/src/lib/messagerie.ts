@@ -209,7 +209,11 @@ export function useFil(conv: ConversationVue, vue: Auteur, onLu?: () => void) {
 
   async function envoyer(texte: string, photo?: string | null) {
     if (apiActive) {
-      const m = await api<MessageApi>(`/demandes/${encodeURIComponent(conv.id)}/messages`, { methode: "POST", corps: { texte: texte.trim() || undefined } });
+      // Avec l'API, `photo` est l'adresse de la photo déjà envoyée (voir televerser).
+      const m = await api<MessageApi>(`/demandes/${encodeURIComponent(conv.id)}/messages`, {
+        methode: "POST",
+        corps: { texte: texte.trim() || undefined, photoUrl: photo ?? undefined },
+      });
       setDistants((l) => (l?.some((x) => x.id === m.id) ? l : [...(l ?? []), m]));
       return;
     }

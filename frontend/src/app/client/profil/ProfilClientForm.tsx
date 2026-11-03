@@ -12,7 +12,7 @@ import { api, apiActive, texteErreur } from "@/lib/api";
 import { idZone, useZonesApi } from "@/lib/auth";
 import { CLIENT_CONNECTE, TECHNICIENS, ZONES } from "@/lib/data";
 import { mettreAJourUtilisateur, useSession, type UtilisateurApi } from "@/lib/session";
-import { usePersistant } from "@/lib/stockage";
+import { useApi } from "@/lib/useApi";
 
 export default function ProfilClientForm() {
   return apiActive ? <ProfilApi /> : <ProfilDemo />;
@@ -20,13 +20,12 @@ export default function ProfilClientForm() {
 
 // ------------------------------------------------------------ Avec l'API
 
-interface Adresse {
-  id: number;
+interface AdresseApi {
+  id: string;
   label: string;
   texte: string;
-  zone: string;
+  zone: { id: string; nom: string } | null;
 }
-const AUCUNE_ADRESSE: Adresse[] = [];
 
 function ProfilApi() {
   const session = useSession();
@@ -46,9 +45,30 @@ function FormulaireProfil({ utilisateur: u }: { utilisateur: UtilisateurApi }) {
   });
   const [envoi, setEnvoi] = useState(false);
   const zones = useZonesApi(true);
-  // Adresses enregistrées sur cet appareil (pas encore conservées par le serveur).
-  const [adresses, setAdresses] = usePersistant<Adresse[]>(`adresses-${u.id}`, AUCUNE_ADRESSE);
+  const { donnees: adresses = [], recharger: rechargerAdresses } = useApi<AdresseApi[]>("/moi/adresses");
   const [nouvelle, setNouvelle] = useState({ label: "", texte: "" });
+
+  async function ajouterAdresse() {
+    try {
+      await api("/moi/adresses", {
+        methode: "POST",
+        corps: { label: nouvelle.label.trim() || "Adresse", texte: nouvelle.texte.trim(), zoneId: idZone(zones, infos.zone) },
+      });
+      setNouvelle({ label: "", texte: "" });
+      rechargerAdresses();
+    } catch (e) {
+      toast(texteErreur(e), "error");
+    }
+  }
+
+  async function supprimerAdresse(id: string) {
+    try {
+      await api(`/moi/adresses/${id}`, { methode: "DELETE" });
+      rechargerAdresses();
+    } catch (e) {
+      toast(texteErreur(e), "error");
+    }
+  }
   const champ = (cle: keyof typeof infos) => ({ value: infos[cle], onChange: (e: { target: { value: string } }) => setInfos((i) => ({ ...i, [cle]: e.target.value })) });
 
   const etapes = [Boolean(u.nom && u.prenom), Boolean(infos.email), Boolean(infos.zone), Boolean(u.photoUrl)];
@@ -85,7 +105,7 @@ function FormulaireProfil({ utilisateur: u }: { utilisateur: UtilisateurApi }) {
       <div className="grid gap-6 xl:grid-cols-[320px_1fr]">
         <Reveal className="space-y-6">
           <Card className="p-6 text-center">
-            <PhotoUpload nom={u.nomComplet} />
+            <PhotoUpload nom={u.nomComplet} photo={u.photoUrl} />
             <p className="mt-4 text-lg font-bold text-slate-900">{u.nomComplet}</p>
             <p className="text-sm text-slate-500">
               {u.typeClient === "ENTREPRISE" ? "Entreprise" : "Particulier"} · Membre depuis {membreDepuis}
@@ -143,7 +163,7 @@ function FormulaireProfil({ utilisateur: u }: { utilisateur: UtilisateurApi }) {
 
           <Card className="p-6">
             <h2 className="font-bold text-slate-900">Mes adresses d&apos;intervention</h2>
-            <p className="mb-4 mt-1 text-xs text-slate-500">Enregistrées sur cet appareil, pour remplir plus vite vos demandes.</p>
+            <p className="mb-4 mt-1 text-xs text-slate-500">Proposées lors de vos prochaines demandes, pour aller plus vite.</p>
             <Reveal className="space-y-2" deps={[adresses.length]} y={10}>
               {adresses.map((a) => (
                 <div key={a.id} className="flex items-center gap-3 rounded-xl border border-slate-200 p-3">
@@ -151,10 +171,11 @@ function FormulaireProfil({ utilisateur: u }: { utilisateur: UtilisateurApi }) {
                   <div className="flex-1">
                     <p className="text-sm font-bold">{a.label}</p>
                     <p className="text-xs text-slate-500">
-                      {a.texte} · {a.zone}
+                      {a.texte}
+                      {a.zone && ` · ${a.zone.nom}`}
                     </p>
                   </div>
-                  <button onClick={() => setAdresses(adresses.filter((x) => x.id !== a.id))} className="rounded-lg p-1.5 text-slate-400 hover:bg-red-50 hover:text-red-500" aria-label="Supprimer">
+                  <button onClick={() => supprimerAdresse(a.id)} className="rounded-lg p-1.5 text-slate-400 hover:bg-red-50 hover:text-red-500" aria-label="Supprimer">
                     <Trash2 className="size-4" />
                   </button>
                 </div>
@@ -163,14 +184,7 @@ function FormulaireProfil({ utilisateur: u }: { utilisateur: UtilisateurApi }) {
             <div className="mt-3 grid gap-2 sm:grid-cols-[140px_1fr_auto]">
               <Input placeholder="Domicile, Bureau…" value={nouvelle.label} onChange={(e) => setNouvelle({ ...nouvelle, label: e.target.value })} />
               <Input placeholder="Quartier, rue, repère" value={nouvelle.texte} onChange={(e) => setNouvelle({ ...nouvelle, texte: e.target.value })} />
-              <Button
-                variant="outline"
-                disabled={!nouvelle.texte.trim()}
-                onClick={() => {
-                  setAdresses([...adresses, { id: Date.now(), label: nouvelle.label.trim() || "Adresse", texte: nouvelle.texte.trim(), zone: infos.zone || "Conakry" }]);
-                  setNouvelle({ label: "", texte: "" });
-                }}
-              >
+              <Button variant="outline" disabled={nouvelle.texte.trim().length < 3} onClick={ajouterAdresse}>
                 <Plus className="size-4" /> Ajouter
               </Button>
             </div>
