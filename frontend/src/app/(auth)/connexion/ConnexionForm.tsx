@@ -7,10 +7,10 @@ import { useRef, useState, type FormEvent } from "react";
 import EtapeCode, { annoncerCode } from "@/components/auth/EtapeCode";
 import { enter, prefersReducedMotion, useGSAP } from "@/components/motion/gsap";
 import { toast } from "@/components/motion/Toaster";
-import { Button, cn, inputClass } from "@/components/ui";
+import { Button, cn, inputClass, LinkButton } from "@/components/ui";
 import GoogleConnexion, { googleConfigure } from "@/components/ui/GoogleConnexion";
 import { apiActive, texteErreur } from "@/lib/api";
-import { connexionGoogle, demanderCode, verifierCode } from "@/lib/auth";
+import { connexionGoogle, demanderCode, sansCompte, verifierCode } from "@/lib/auth";
 import { cheminRetour, retourDemande } from "@/lib/redirect";
 import { ESPACE_ROLE, memoriserNumeroVerifie, type RoleApi } from "@/lib/session";
 
@@ -34,6 +34,8 @@ export default function ConnexionForm() {
   const [erreur, setErreur] = useState("");
   const [envoi, setEnvoi] = useState(false);
   const [codeTest, setCodeTest] = useState<string>();
+  // Numéro saisi qui n'a pas de compte (affiché tant que le numéro n'est pas modifié).
+  const [numeroInconnu, setNumeroInconnu] = useState<string | null>(null);
 
   // Transition entre les étapes : la nouvelle étape glisse depuis la droite.
   useGSAP(
@@ -45,6 +47,10 @@ export default function ConnexionForm() {
   );
 
   const telNettoye = telephone.replace(/\D/g, "");
+  const inconnu = numeroInconnu !== null && numeroInconnu === telNettoye;
+  /** Lien d'inscription qui reprend le numéro saisi (et l'action en cours). */
+  const lienInscription = (type: "client" | "technicien") =>
+    `/inscription/${type}?telephone=${telNettoye}${redirect && type === "client" ? `&redirect=${encodeURIComponent(redirect)}` : ""}`;
 
   /** Après connexion : retour à l'action en cours (ex. envoi d'une demande), sinon l'espace du rôle. */
   function entrer(role: RoleApi) {
@@ -64,12 +70,14 @@ export default function ConnexionForm() {
     }
     setEnvoi(true);
     try {
-      const { codeDev } = await demanderCode(telNettoye);
+      const { codeDev } = await demanderCode(telNettoye, "connexion");
       setCodeTest(codeDev);
       setEtape("code");
       annoncerCode(telephone, codeDev);
     } catch (err) {
-      setErreur(texteErreur(err));
+      // Numéro sans compte : aucun code envoyé, on propose directement l'inscription.
+      if (sansCompte(err)) setNumeroInconnu(telNettoye);
+      else setErreur(texteErreur(err));
     } finally {
       setEnvoi(false);
     }
@@ -77,7 +85,7 @@ export default function ConnexionForm() {
 
   async function renvoyer() {
     if (!apiActive) return toast("Nouveau code envoyé par SMS", "info");
-    const { codeDev } = await demanderCode(telNettoye);
+    const { codeDev } = await demanderCode(telNettoye, "connexion");
     setCodeTest(codeDev);
     annoncerCode(telephone, codeDev);
   }
@@ -146,6 +154,23 @@ export default function ConnexionForm() {
             </div>
           </label>
           {erreur && <p className="text-sm font-medium text-red-600">{erreur}</p>}
+          {inconnu && (
+            <div className="step-panel space-y-3 rounded-2xl bg-accent-50 p-4 ring-1 ring-accent-100">
+              <p className="text-sm text-slate-700">
+                <strong className="text-slate-900">Le +224 {telephone} n&apos;a pas encore de compte GDC.</strong> Aucun code ne vous a été envoyé :
+                créez votre compte, c&apos;est gratuit et rapide.
+              </p>
+              <div className="grid gap-2 sm:grid-cols-2">
+                <LinkButton href={lienInscription("client")} size="sm" className="w-full">
+                  <User className="size-4" /> Je suis client
+                </LinkButton>
+                <LinkButton href={lienInscription("technicien")} size="sm" variant="outline" className="w-full">
+                  <Wrench className="size-4" /> Je suis technicien
+                </LinkButton>
+              </div>
+              <p className="text-xs text-slate-500">Ce n&apos;est pas votre numéro ? Corrigez-le ci-dessus.</p>
+            </div>
+          )}
           <Button type="submit" size="lg" className="w-full" disabled={envoi}>
             {envoi ? (
               <>

@@ -2,17 +2,18 @@
 
 import { ArrowLeft, ArrowRight, Check, FileUp, IdCard, ImagePlus, GraduationCap } from "lucide-react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useRef, useState, type FormEvent } from "react";
+import DejaInscrit, { numeroPrerempli } from "@/components/auth/DejaInscrit";
 import EtapeCode from "@/components/auth/EtapeCode";
 import { useVerificationNumero } from "@/components/auth/useVerificationNumero";
 import { enter, gsap, prefersReducedMotion, useGSAP } from "@/components/motion/gsap";
 import { toast } from "@/components/motion/Toaster";
 import { Button, cn, Field, Input, MetierIcon, Select, Textarea } from "@/components/ui";
 import { apiActive, texteErreur } from "@/lib/api";
-import { idZone, inscrire, useZonesApi } from "@/lib/auth";
+import { dejaInscrit, idZone, inscrire, useZonesApi } from "@/lib/auth";
 import { METIERS, ZONES, type MetierId } from "@/lib/data";
-import { ESPACE_ROLE, formaterNumero, useNumeroVerifie } from "@/lib/session";
+import { ESPACE_ROLE, useNumeroVerifie } from "@/lib/session";
 
 const ETAPES = ["Identité", "Métier", "Documents"];
 const SPECIALITES = ["Installation", "Dépannage", "Maintenance", "Rénovation", "Conseil", "Urgences"];
@@ -52,7 +53,9 @@ export default function InscriptionTechnicienForm() {
   // Numéro déjà vérifié sur la page de connexion : prérempli tant que l'utilisateur ne le modifie pas.
   const verifie = useNumeroVerifie();
   const [telephoneSaisi, setTelephone] = useState<string | null>(null);
-  const telephone = telephoneSaisi ?? (verifie ? formaterNumero(verifie.telephone) : "");
+  const telephoneConnexion = useSearchParams().get("telephone");
+  const telephone = telephoneSaisi ?? numeroPrerempli(verifie?.telephone ?? telephoneConnexion);
+  const [dejaCompte, setDejaCompte] = useState(false);
   const [envoi, setEnvoi] = useState(false);
   const [erreur, setErreur] = useState("");
   const zonesApi = useZonesApi(apiActive);
@@ -107,11 +110,13 @@ export default function InscriptionTechnicienForm() {
       return router.push("/technicien");
     }
     setErreur("");
+    setDejaCompte(false);
     setEnvoi(true);
     try {
       await verification.demarrer(telephone);
     } catch (err) {
-      setErreur(texteErreur(err));
+      if (dejaInscrit(err)) setDejaCompte(true);
+      else setErreur(texteErreur(err));
     } finally {
       setEnvoi(false);
     }
@@ -288,6 +293,11 @@ export default function InscriptionTechnicienForm() {
         </div>
 
         {erreur && <p className="mt-6 text-sm font-medium text-red-600">{erreur}</p>}
+        {dejaCompte && (
+          <div className="mt-6">
+            <DejaInscrit telephone={telephone} />
+          </div>
+        )}
         <div className="mt-8 flex gap-3">
           {etape > 0 && (
             <Button variant="ghost" size="lg" onClick={() => aller(etape - 1)}>

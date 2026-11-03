@@ -28,7 +28,7 @@ export function useVerificationNumero({ creerCompte, compteExistant }: Rappels) 
     const numero = saisie.replace(/\D/g, "").replace(/^(00)?224/, "");
     const dejaVerifie = numeroVerifie();
     if (dejaVerifie?.telephone === numero) return rappels.current.creerCompte(dejaVerifie.jeton);
-    const { codeDev } = await demanderCode(numero);
+    const { codeDev } = await demanderCode(numero, "inscription");
     setTelephone(numero);
     setCodeTest(codeDev);
     annoncerCode(saisie, codeDev);
@@ -41,7 +41,7 @@ export function useVerificationNumero({ creerCompte, compteExistant }: Rappels) 
   }
 
   async function renvoyer() {
-    const { codeDev } = await demanderCode(telephone!);
+    const { codeDev } = await demanderCode(telephone!, "inscription");
     setCodeTest(codeDev);
     annoncerCode(telephone!, codeDev);
   }

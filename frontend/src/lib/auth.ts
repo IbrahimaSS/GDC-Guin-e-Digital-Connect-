@@ -1,15 +1,23 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { api } from "./api";
+import { api, ErreurApi } from "./api";
 import { fermerSession, lireSession, ouvrirSession, oublierNumeroVerifie, type ReponseSession } from "./session";
 
 // Connexion et inscription par numéro de téléphone (code SMS), branchées sur l'API.
 
-/** Le serveur de développement renvoie le code (codeDev) : aucun SMS réel n'est envoyé. */
-export async function demanderCode(telephone: string) {
-  return api<{ expireDansSecondes: number; codeDev?: string }>("/auth/otp/demander", { methode: "POST", corps: { telephone }, auth: false });
+/**
+ * Demande un code. « connexion » : refusé (404) si le numéro n'a pas de compte ;
+ * « inscription » : refusé (409) s'il en a déjà un. Aucun SMS n'est alors envoyé.
+ * Le serveur de développement renvoie le code (codeDev) : aucun SMS réel n'est envoyé.
+ */
+export async function demanderCode(telephone: string, but: "connexion" | "inscription") {
+  return api<{ expireDansSecondes: number; codeDev?: string }>("/auth/otp/demander", { methode: "POST", corps: { telephone, but }, auth: false });
 }
+
+/** Le numéro n'a pas de compte (connexion) ou en a déjà un (inscription). */
+export const sansCompte = (e: unknown) => e instanceof ErreurApi && e.statut === 404;
+export const dejaInscrit = (e: unknown) => e instanceof ErreurApi && e.statut === 409;
 
 export type ResultatVerification = { inscriptionRequise: true; jetonInscription: string } | ({ inscriptionRequise: false } & ReponseSession);
 

@@ -4,16 +4,17 @@ import { Building2, ClipboardList, User } from "lucide-react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useRef, useState, type FormEvent } from "react";
+import DejaInscrit, { numeroPrerempli } from "@/components/auth/DejaInscrit";
 import EtapeCode from "@/components/auth/EtapeCode";
 import { useVerificationNumero } from "@/components/auth/useVerificationNumero";
 import Reveal from "@/components/motion/Reveal";
 import { toast } from "@/components/motion/Toaster";
 import { Button, cn, Field, Input, Select } from "@/components/ui";
 import { apiActive, texteErreur } from "@/lib/api";
-import { idZone, inscrire, useZonesApi } from "@/lib/auth";
+import { dejaInscrit, idZone, inscrire, useZonesApi } from "@/lib/auth";
 import { ZONES } from "@/lib/data";
 import { cheminRetour, retourDemande } from "@/lib/redirect";
-import { ESPACE_ROLE, formaterNumero, useNumeroVerifie } from "@/lib/session";
+import { ESPACE_ROLE, useNumeroVerifie } from "@/lib/session";
 
 interface Saisie {
   nom: string;
@@ -25,12 +26,14 @@ interface Saisie {
 
 export default function InscriptionClientForm() {
   const router = useRouter();
-  const redirect = cheminRetour(useSearchParams().get("redirect"));
+  const params = useSearchParams();
+  const redirect = cheminRetour(params.get("redirect"));
   const [type, setType] = useState<"particulier" | "entreprise">("particulier");
   // Numéro déjà vérifié sur la page de connexion : prérempli tant que l'utilisateur ne le modifie pas.
   const verifie = useNumeroVerifie();
   const [telephoneSaisi, setTelephone] = useState<string | null>(null);
-  const telephone = telephoneSaisi ?? (verifie ? formaterNumero(verifie.telephone) : "");
+  const telephone = telephoneSaisi ?? numeroPrerempli(verifie?.telephone ?? params.get("telephone"));
+  const [dejaCompte, setDejaCompte] = useState(false);
   // État pour réafficher le formulaire, référence pour la création du compte (lue juste après le clic).
   const [saisie, setSaisie] = useState<Saisie | null>(null);
   const derniereSaisie = useRef<Saisie | null>(null);
@@ -76,11 +79,13 @@ export default function InscriptionClientForm() {
     derniereSaisie.current = { nom: texte("nom"), prenom: texte("prenom"), zone: texte("zone"), email: texte("email"), entreprise: texte("entreprise") };
     setSaisie(derniereSaisie.current);
     setErreur("");
+    setDejaCompte(false);
     setEnvoi(true);
     try {
       await verification.demarrer(telephone);
     } catch (err) {
-      setErreur(texteErreur(err));
+      if (dejaInscrit(err)) setDejaCompte(true);
+      else setErreur(texteErreur(err));
     } finally {
       setEnvoi(false);
     }
@@ -194,6 +199,7 @@ export default function InscriptionClientForm() {
         </label>
 
         {erreur && <p className="text-sm font-medium text-red-600">{erreur}</p>}
+        {dejaCompte && <DejaInscrit telephone={telephone} redirect={redirect} />}
         <Button type="submit" size="lg" className="w-full" disabled={envoi}>
           {envoi ? (
             <>
