@@ -9,6 +9,7 @@ import { AuthGuard, LimiteRequetesGuard } from './common/guards.js';
 import { configuration } from './config/configuration.js';
 import { DemandesModule } from './demandes/demandes.module.js';
 import { DevisModule } from './devis/devis.module.js';
+import { FichiersModule } from './fichiers/fichiers.module.js';
 import { MessagesModule } from './messages/messages.module.js';
 import { NotificationsModule } from './notifications/notifications.module.js';
 import { ParametresModule } from './parametres/parametres.module.js';
@@ -27,6 +28,7 @@ import { VerificationsModule } from './verifications/verifications.module.js';
     SmsModule,
     NotificationsModule,
     ParametresModule,
+    FichiersModule,
     AuthModule,
     UsersModule,
     ReferentielsModule,

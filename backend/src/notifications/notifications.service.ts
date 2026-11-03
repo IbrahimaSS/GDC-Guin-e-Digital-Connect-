@@ -1,6 +1,7 @@
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { type Canal, SmsService } from '../sms/sms.service.js';
+import { lirePreferences } from '../users/preferences.js';
 
 // Événements de la plateforme et messages envoyés au destinataire (mêmes textes que le frontend).
 export type Evenement =
@@ -148,9 +149,11 @@ export class NotificationsService {
     const texte = remplir(modele.texte, vars);
     const user = await this.prisma.user.findUnique({
       where: { id: destinataireId },
-      select: { telephone: true },
+      select: { telephone: true, preferences: true, supprimeLe: true },
     });
-    if (!user) return;
+    if (!user || user.supprimeLe) return;
+    // SMS / WhatsApp selon les préférences de l'utilisateur ; la notification dans l'application reste.
+    const preferences = lirePreferences(user.preferences);
 
     await this.prisma.notification.create({
       data: {
@@ -162,7 +165,7 @@ export class NotificationsService {
       },
     });
 
-    for (const canal of modele.canaux) {
+    for (const canal of modele.canaux.filter((c) => preferences[c])) {
       let statut = 'envoye';
       let erreur: string | undefined;
       try {

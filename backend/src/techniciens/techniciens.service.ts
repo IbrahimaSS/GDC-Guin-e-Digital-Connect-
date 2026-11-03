@@ -53,6 +53,7 @@ function presenterCarte(t: Carte) {
 /** Un technicien n'apparaît publiquement qu'avec un compte actif et une identité vérifiée. */
 const VISIBLE: Prisma.ProfilTechnicienWhereInput = {
   niveau: { gte: 1 },
+  visible: true,
   user: { statut: 'ACTIF' },
 };
 

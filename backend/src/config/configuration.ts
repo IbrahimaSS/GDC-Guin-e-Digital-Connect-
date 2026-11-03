@@ -24,6 +24,15 @@ export const configuration = () => ({
   },
   smsDriver: process.env.SMS_DRIVER ?? 'console',
   googleClientId: process.env.GOOGLE_CLIENT_ID ?? '',
+  fichiers: {
+    /** Dossier des fichiers envoyés (photos publiques et pièces justificatives privées). */
+    dossier: process.env.UPLOAD_DIR ?? 'uploads',
+    /** Adresse publique de l'API, utilisée pour construire l'URL des photos. */
+    urlPublique: (
+      process.env.API_PUBLIC_URL ??
+      `http://localhost:${process.env.PORT ?? 4000}`
+    ).replace(/\/$/, ''),
+  },
 });
 
 export type Configuration = ReturnType<typeof configuration>;
