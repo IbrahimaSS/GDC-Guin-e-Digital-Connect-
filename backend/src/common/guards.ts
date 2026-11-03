@@ -8,8 +8,17 @@ import {
 import { Reflector } from '@nestjs/core';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
+import { ThrottlerGuard } from '@nestjs/throttler';
 import type { Role } from '../generated/prisma/client.js';
 import { ROLES, ROUTE_PUBLIQUE, type UtilisateurConnecte } from './auth.js';
+
+/** Limitation du nombre de requêtes HTTP. Les événements Socket.IO n'ont pas de requête HTTP : ils ne sont pas comptés. */
+@Injectable()
+export class LimiteRequetesGuard extends ThrottlerGuard {
+  protected async shouldSkip(ctx: ExecutionContext): Promise<boolean> {
+    return ctx.getType() !== 'http' || super.shouldSkip(ctx);
+  }
+}
 
 /** Extrait le jeton « Authorization: Bearer … ». */
 export function jetonBearer(entete?: string): string | undefined {
@@ -30,6 +39,8 @@ export class AuthGuard implements CanActivate {
   ) {}
 
   async canActivate(ctx: ExecutionContext): Promise<boolean> {
+    // Socket.IO : le jeton est vérifié à la connexion (MessagesGateway), pas à chaque événement.
+    if (ctx.getType() !== 'http') return true;
     const cibles = [ctx.getHandler(), ctx.getClass()];
     if (this.reflector.getAllAndOverride<boolean>(ROUTE_PUBLIQUE, cibles))
       return true;
