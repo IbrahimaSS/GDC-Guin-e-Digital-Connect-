@@ -124,6 +124,7 @@ export default function InscriptionTechnicienForm() {
         telephone={telephone}
         onValider={verification.valider}
         onRenvoyer={verification.renvoyer}
+        codeTest={verification.codeTest}
         onRetour={() => {
           verification.annuler();
           aller(0);

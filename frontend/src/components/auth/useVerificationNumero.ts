@@ -18,6 +18,7 @@ interface Rappels {
  */
 export function useVerificationNumero({ creerCompte, compteExistant }: Rappels) {
   const [telephone, setTelephone] = useState<string | null>(null);
+  const [codeTest, setCodeTest] = useState<string>();
   const rappels = useRef({ creerCompte, compteExistant });
   useEffect(() => {
     rappels.current = { creerCompte, compteExistant };
@@ -29,6 +30,7 @@ export function useVerificationNumero({ creerCompte, compteExistant }: Rappels) 
     if (dejaVerifie?.telephone === numero) return rappels.current.creerCompte(dejaVerifie.jeton);
     const { codeDev } = await demanderCode(numero);
     setTelephone(numero);
+    setCodeTest(codeDev);
     annoncerCode(saisie, codeDev);
   }
 
@@ -40,12 +42,14 @@ export function useVerificationNumero({ creerCompte, compteExistant }: Rappels) 
 
   async function renvoyer() {
     const { codeDev } = await demanderCode(telephone!);
+    setCodeTest(codeDev);
     annoncerCode(telephone!, codeDev);
   }
 
   return {
     /** Numéro en cours de vérification : afficher l'étape du code tant qu'il est défini. */
     telephone,
+    codeTest,
     demarrer,
     valider,
     renvoyer,

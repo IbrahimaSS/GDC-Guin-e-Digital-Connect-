@@ -33,6 +33,7 @@ export default function ConnexionForm() {
   const [telephone, setTelephone] = useState("");
   const [erreur, setErreur] = useState("");
   const [envoi, setEnvoi] = useState(false);
+  const [codeTest, setCodeTest] = useState<string>();
 
   // Transition entre les étapes : la nouvelle étape glisse depuis la droite.
   useGSAP(
@@ -64,6 +65,7 @@ export default function ConnexionForm() {
     setEnvoi(true);
     try {
       const { codeDev } = await demanderCode(telNettoye);
+      setCodeTest(codeDev);
       setEtape("code");
       annoncerCode(telephone, codeDev);
     } catch (err) {
@@ -76,6 +78,7 @@ export default function ConnexionForm() {
   async function renvoyer() {
     if (!apiActive) return toast("Nouveau code envoyé par SMS", "info");
     const { codeDev } = await demanderCode(telNettoye);
+    setCodeTest(codeDev);
     annoncerCode(telephone, codeDev);
   }
 
@@ -186,7 +189,7 @@ export default function ConnexionForm() {
         </form>
       )}
 
-      {etape === "code" && <EtapeCode telephone={telephone} onValider={valider} onRenvoyer={renvoyer} onRetour={() => setEtape("telephone")} />}
+      {etape === "code" && <EtapeCode telephone={telephone} onValider={valider} onRenvoyer={renvoyer} onRetour={() => setEtape("telephone")} codeTest={codeTest} />}
 
       {etape === "espace" && (
         <div className="step-panel space-y-4">

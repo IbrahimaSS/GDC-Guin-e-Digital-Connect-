@@ -93,6 +93,7 @@ export default function InscriptionClientForm() {
         telephone={telephone}
         onValider={verification.valider}
         onRenvoyer={verification.renvoyer}
+        codeTest={verification.codeTest}
         onRetour={verification.annuler}
       />
     );

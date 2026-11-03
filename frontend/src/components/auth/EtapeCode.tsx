@@ -14,6 +14,8 @@ interface Props {
   onRenvoyer: () => Promise<void> | void;
   onRetour: () => void;
   titre?: string;
+  /** Code renvoyé par le serveur de développement (aucun SMS réel n'est envoyé). */
+  codeTest?: string;
 }
 
 const DELAI_RENVOI = 30;
@@ -25,7 +27,7 @@ export function annoncerCode(telephone: string, codeDev?: string) {
 }
 
 /** Saisie du code à 6 chiffres reçu par SMS, avec renvoi après 30 secondes. */
-export default function EtapeCode({ telephone, onValider, onRenvoyer, onRetour, titre = "Vérification" }: Props) {
+export default function EtapeCode({ telephone, onValider, onRenvoyer, onRetour, titre = "Vérification", codeTest }: Props) {
   const [code, setCode] = useState("");
   const [erreur, setErreur] = useState("");
   const [envoi, setEnvoi] = useState(false);
@@ -74,6 +76,11 @@ export default function EtapeCode({ telephone, onValider, onRenvoyer, onRetour, 
           Saisissez le code à 6 chiffres envoyé au <strong className="text-slate-800">+224 {telephone}</strong>.
         </p>
       </div>
+      {codeTest && (
+        <p className="rounded-xl bg-amber-50 px-4 py-3 text-sm text-amber-800 ring-1 ring-amber-200">
+          Mode test, aucun SMS n&apos;est envoyé. Votre code : <strong className="font-mono text-base tracking-widest">{codeTest}</strong>
+        </p>
+      )}
       <OtpInput value={code} onChange={setCode} error={!!erreur} />
       {erreur && <p className="text-sm font-medium text-red-600">{erreur}</p>}
       <Button type="submit" size="lg" className="w-full" disabled={code.length !== 6 || envoi}>
