@@ -7,7 +7,10 @@ import Reveal from "@/components/motion/Reveal";
 import TechnicienCard from "@/components/shared/TechnicienCard";
 import TechnicienProCard from "@/components/shared/TechnicienProCard";
 import { Button, Card, cn, EmptyState, LinkButton, Select } from "@/components/ui";
+import { apiActive } from "@/lib/api";
+import { idZone, useZonesApi } from "@/lib/auth";
 import { getMetier, METIERS, TECHNICIENS, ZONES } from "@/lib/data";
+import { useRechercheTechniciens } from "@/lib/techniciens";
 
 type Tri = "pertinence" | "note" | "avis" | "experience";
 
@@ -31,7 +34,15 @@ export default function ResultatsView() {
     router.replace(`${pathname}?${next}`, { scroll: false });
   }
 
-  const resultats = useMemo(() => {
+  // Avec l'API : la zone est désignée par son identifiant, on attend donc la liste des zones.
+  const zonesApi = useZonesApi(apiActive);
+  const zoneId = zone ? idZone(zonesApi, zone) : undefined;
+  const zoneNonDesservie = Boolean(apiActive && zone && zonesApi.length && !zoneId);
+  const pret = !zone || Boolean(zoneId);
+  const recherche = useRechercheTechniciens({ metier, zoneId, q: specialite || undefined, niveauMin: niveau, disponible, tri }, apiActive && pret);
+  const chargement = apiActive && !zoneNonDesservie && (!pret || recherche.chargement);
+
+  const maquette = useMemo(() => {
     const liste = TECHNICIENS.filter(
       (t) =>
         (!metier || t.metier === metier) &&
@@ -49,6 +60,7 @@ export default function ResultatsView() {
     };
     return [...liste].sort(tris[tri]);
   }, [metier, zone, specialite, niveau, disponible, tri]);
+  const resultats = apiActive ? (zoneNonDesservie ? [] : recherche.resultats) : maquette;
 
   const filtresActifs = [metier && getMetier(metier as never).label, zone, specialite, niveau && `Niveau ${niveau}+`, disponible && "Disponible"].filter(Boolean);
 
@@ -126,7 +138,7 @@ export default function ResultatsView() {
 
       <div className="mb-4 mt-6 flex flex-wrap items-center gap-2">
         <p className="mr-2 text-lg font-bold text-slate-900">
-          {resultats.length} résultat{resultats.length > 1 ? "s" : ""} trouvé{resultats.length > 1 ? "s" : ""}
+          {chargement ? "Recherche…" : `${resultats.length} résultat${resultats.length > 1 ? "s" : ""} trouvé${resultats.length > 1 ? "s" : ""}`}
         </p>
         {filtresActifs.map((f) => (
           <span key={String(f)} className="rounded-full bg-brand-50 px-2.5 py-0.5 text-xs font-semibold text-brand-700">
@@ -140,11 +152,21 @@ export default function ResultatsView() {
         )}
       </div>
 
-      {resultats.length === 0 ? (
+      {chargement ? (
+        <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3" aria-busy="true">
+          {[0, 1, 2].map((i) => (
+            <div key={i} className="h-80 animate-pulse rounded-2xl bg-white ring-1 ring-slate-200" />
+          ))}
+        </div>
+      ) : resultats.length === 0 ? (
         <EmptyState
           icon={SearchX}
           title="Aucun professionnel trouvé"
-          text="Essayez d'élargir la zone, de retirer un filtre ou de choisir un autre métier."
+          text={
+            zoneNonDesservie
+              ? `GDC n'est pas encore présent à ${zone}. Essayez une zone voisine.`
+              : recherche.erreur ?? "Essayez d'élargir la zone, de retirer un filtre ou de choisir un autre métier."
+          }
           action={<LinkButton href="/resultats" variant="outline">Voir tous les professionnels</LinkButton>}
         />
       ) : vue === "liste" ? (

@@ -7,21 +7,21 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { enter, prefersReducedMotion, useGSAP } from "@/components/motion/gsap";
 import { toast } from "@/components/motion/Toaster";
+import ChargementListe from "@/components/shared/ChargementListe";
 import { StatutDemandeBadge } from "@/components/shared/status";
 import { Avatar, Card, cn, EmptyState } from "@/components/ui";
-import { conversations, heureActuelle, nouvelId, REPONSES_DEMO, REPONSES_RAPIDES, useMessages, type Auteur, type Conversation, type Message } from "@/lib/messages";
-import { notifier } from "@/lib/notifier";
+import { apiActive, texteErreur } from "@/lib/api";
+import { useApercu, useConversations, useFil, type ConversationVue } from "@/lib/messagerie";
+import { REPONSES_RAPIDES, type Auteur } from "@/lib/messages";
 
-const autre = (a: Auteur): Auteur => (a === "client" ? "technicien" : "client");
-
-function Fil({ conv, vue }: { conv: Conversation; vue: Auteur }) {
-  const [messages, setMessages] = useMessages(conv.demande.id);
+function Fil({ conv, vue, onLu }: { conv: ConversationVue; vue: Auteur; onLu: () => void }) {
+  const { messages, envoyer: envoyerMessage, ecrit, signalerEcriture, chargement } = useFil(conv, vue, onLu);
   const [texte, setTexte] = useState("");
   const [photo, setPhoto] = useState<string | null>(null);
-  const [ecrit, setEcrit] = useState(false);
+  const [envoi, setEnvoi] = useState(false);
   const fil = useRef<HTMLDivElement>(null);
   const nbPrecedent = useRef(messages.length);
-  const interlocuteur = vue === "client" ? conv.technicien : conv.client;
+  const interlocuteur = conv.interlocuteur;
 
   // Défilement en bas et apparition animée des nouveaux messages.
   useGSAP(
@@ -37,26 +37,18 @@ function Fil({ conv, vue }: { conv: Conversation; vue: Auteur }) {
     { dependencies: [messages.length, ecrit], scope: fil },
   );
 
-  // Les messages reçus sont marqués comme lus à l'ouverture.
-  useEffect(() => {
-    if (messages.some((x) => x.auteur !== vue && !x.lu)) setMessages((liste) => liste.map((x) => (x.auteur !== vue ? { ...x, lu: true } : x)));
-  }, [messages, vue, setMessages]);
-
-  function envoyer(contenu: string, image?: string | null) {
-    if (!contenu.trim() && !image) return;
-    const message: Message = { id: nouvelId(), auteur: vue, texte: contenu.trim() || undefined, photo: image ?? undefined, heure: heureActuelle() };
-    setMessages((l) => [...l, message]);
-    setTexte("");
-    setPhoto(null);
-    if (vue === "client") notifier("nouveau_message", { client: conv.client, mission: conv.demande.titre });
-
-    // Démonstration : réponse de l'interlocuteur après quelques secondes.
-    window.setTimeout(() => setEcrit(true), 900);
-    window.setTimeout(() => {
-      setEcrit(false);
-      const pool = REPONSES_DEMO[autre(vue)];
-      setMessages((l) => [...l, { id: nouvelId(), auteur: autre(vue), texte: pool[l.length % pool.length], heure: heureActuelle() }]);
-    }, 2800);
+  async function envoyer(contenu: string, image?: string | null) {
+    if ((!contenu.trim() && !image) || envoi) return;
+    setEnvoi(true);
+    try {
+      await envoyerMessage(contenu, image);
+      setTexte("");
+      setPhoto(null);
+    } catch (e) {
+      toast(texteErreur(e), "error");
+    } finally {
+      setEnvoi(false);
+    }
   }
 
   function soumettre(e: FormEvent) {
@@ -74,17 +66,23 @@ function Fil({ conv, vue }: { conv: Conversation; vue: Auteur }) {
         <div className="min-w-0 flex-1">
           <p className="truncate font-bold text-slate-900">{interlocuteur}</p>
           <p className="truncate text-xs text-slate-500">
-            {conv.demande.reference} · {conv.demande.titre}
+            {conv.reference} · {conv.titre}
           </p>
         </div>
-        <StatutDemandeBadge statut={conv.demande.statut} />
-        <a href={`tel:${conv.demande.clientTel.replace(/\s/g, "")}`} className="rounded-xl bg-brand-50 p-2.5 text-brand-600 hover:bg-brand-100" aria-label="Appeler">
-          <Phone className="size-4" />
-        </a>
+        <StatutDemandeBadge statut={conv.statut} />
+        {conv.telephone && (
+          <a href={`tel:${conv.telephone.replace(/\s/g, "")}`} className="rounded-xl bg-brand-50 p-2.5 text-brand-600 hover:bg-brand-100" aria-label="Appeler">
+            <Phone className="size-4" />
+          </a>
+        )}
       </div>
 
       <div ref={fil} className="flex-1 space-y-3 overflow-y-auto bg-slate-50/60 px-4 py-5">
         <p className="mx-auto w-fit rounded-full bg-white px-3 py-1 text-[11px] text-slate-400 shadow-sm">Les échanges restent liés à la mission, pour votre sécurité.</p>
+        {chargement && <ChargementListe lignes={2} />}
+        {!chargement && messages.length === 0 && (
+          <p className="pt-6 text-center text-sm text-slate-400">Aucun message pour l&apos;instant. Écrivez à {interlocuteur.split(" ")[0]} au sujet de la mission.</p>
+        )}
         {messages.map((msg) => {
           const moi = msg.auteur === vue;
           return (
@@ -97,7 +95,7 @@ function Fil({ conv, vue }: { conv: Conversation; vue: Auteur }) {
               >
                 {msg.photo && (
                   <span className="relative block h-44 w-64 max-w-full">
-                    <Image src={msg.photo} alt="Photo envoyée" fill unoptimized={msg.photo.startsWith("blob:") || msg.photo.startsWith("data:")} sizes="256px" className="object-cover" />
+                    <Image src={msg.photo} alt="Photo envoyée" fill unoptimized={!msg.photo.startsWith("/")} sizes="256px" className="object-cover" />
                   </span>
                 )}
                 {msg.texte && <p className="whitespace-pre-wrap px-3.5 pt-2.5">{msg.texte}</p>}
@@ -137,27 +135,33 @@ function Fil({ conv, vue }: { conv: Conversation; vue: Auteur }) {
           </div>
         )}
         <form onSubmit={soumettre} className="flex items-end gap-2">
-          <label className="cursor-pointer rounded-xl p-2.5 text-slate-500 transition-colors hover:bg-slate-100 hover:text-brand-600" aria-label="Joindre une photo">
-            <ImagePlus className="size-5" />
-            <input
-              type="file"
-              accept="image/*"
-              className="sr-only"
-              onChange={(e) => {
-                const f = e.target.files?.[0];
-                e.target.value = "";
-                if (!f) return;
-                if (f.size > 5 * 1024 * 1024) return toast("Photo trop lourde (5 Mo maximum).", "error");
-                // Conservée en data URL pour rester visible après rechargement de la page.
-                const lecteur = new FileReader();
-                lecteur.onload = () => setPhoto(String(lecteur.result));
-                lecteur.readAsDataURL(f);
-              }}
-            />
-          </label>
+          {/* TODO : envoi de photos avec l'API, une fois le stockage des fichiers en place. */}
+          {!apiActive && (
+            <label className="cursor-pointer rounded-xl p-2.5 text-slate-500 transition-colors hover:bg-slate-100 hover:text-brand-600" aria-label="Joindre une photo">
+              <ImagePlus className="size-5" />
+              <input
+                type="file"
+                accept="image/*"
+                className="sr-only"
+                onChange={(e) => {
+                  const f = e.target.files?.[0];
+                  e.target.value = "";
+                  if (!f) return;
+                  if (f.size > 5 * 1024 * 1024) return toast("Photo trop lourde (5 Mo maximum).", "error");
+                  // Conservée en data URL pour rester visible après rechargement de la page.
+                  const lecteur = new FileReader();
+                  lecteur.onload = () => setPhoto(String(lecteur.result));
+                  lecteur.readAsDataURL(f);
+                }}
+              />
+            </label>
+          )}
           <textarea
             value={texte}
-            onChange={(e) => setTexte(e.target.value)}
+            onChange={(e) => {
+              setTexte(e.target.value);
+              signalerEcriture();
+            }}
             onKeyDown={(e) => {
               if (e.key === "Enter" && !e.shiftKey) {
                 e.preventDefault();
@@ -165,12 +169,13 @@ function Fil({ conv, vue }: { conv: Conversation; vue: Auteur }) {
               }
             }}
             rows={1}
+            maxLength={2000}
             placeholder={`Écrire à ${interlocuteur.split(" ")[0]}…`}
             className="max-h-32 min-h-11 flex-1 resize-none rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm text-slate-900 outline-none focus:border-brand-400 focus:ring-4 focus:ring-brand-100"
           />
           <button
             type="submit"
-            disabled={!texte.trim() && !photo}
+            disabled={(!texte.trim() && !photo) || envoi}
             className="rounded-xl bg-accent-500 p-3 text-white shadow-sm transition-colors hover:bg-accent-600 disabled:opacity-40"
             aria-label="Envoyer"
           >
@@ -182,22 +187,19 @@ function Fil({ conv, vue }: { conv: Conversation; vue: Auteur }) {
   );
 }
 
-function Apercu({ conv, vue, actif, href }: { conv: Conversation; vue: Auteur; actif: boolean; href: string }) {
-  const [messages] = useMessages(conv.demande.id);
-  const dernier = messages[messages.length - 1];
-  const nonLus = messages.filter((x) => x.auteur !== vue && !x.lu).length;
-  const nom = vue === "client" ? conv.technicien : conv.client;
+function Apercu({ conv, vue, actif, href }: { conv: ConversationVue; vue: Auteur; actif: boolean; href: string }) {
+  const { dernier, nonLus } = useApercu(conv, vue);
   return (
     <Link href={href} className={cn("flex items-center gap-3 rounded-xl p-3 transition-colors", actif ? "bg-brand-50" : "hover:bg-slate-50")}>
-      <Avatar nom={nom} className="size-11" />
+      <Avatar nom={conv.interlocuteur} className="size-11" />
       <div className="min-w-0 flex-1">
         <div className="flex items-center justify-between gap-2">
-          <p className="truncate font-bold text-slate-900">{nom}</p>
+          <p className="truncate font-bold text-slate-900">{conv.interlocuteur}</p>
           <span className="shrink-0 text-[10px] text-slate-400">{dernier?.heure.split(" · ")[1] ?? ""}</span>
         </div>
-        <p className="truncate text-xs font-medium text-brand-700">{conv.demande.titre}</p>
+        <p className="truncate text-xs font-medium text-brand-700">{conv.titre}</p>
         <p className={cn("truncate text-xs", nonLus ? "font-semibold text-slate-800" : "text-slate-500")}>
-          {dernier ? `${dernier.auteur === vue ? "Vous : " : ""}${dernier.texte ?? "📷 Photo"}` : "Démarrer la conversation"}
+          {dernier ? `${dernier.deMoi ? "Vous : " : ""}${dernier.texte}` : "Démarrer la conversation"}
         </p>
       </div>
       {nonLus > 0 && <span className="rounded-full bg-accent-500 px-1.5 text-[11px] font-bold text-white">{nonLus}</span>}
@@ -210,14 +212,14 @@ export default function MessagerieView({ vue }: { vue: Auteur }) {
   const params = useSearchParams();
   const pathname = usePathname();
   const router = useRouter();
-  const liste = conversations(vue);
+  const { liste, chargement, recharger } = useConversations(vue);
   const [q, setQ] = useState("");
-  const choisie = liste.find((c) => c.demande.id === params.get("c"));
-  const visibles = liste.filter((c) => (c.demande.titre + c.client + c.technicien).toLowerCase().includes(q.toLowerCase()));
+  const choisie = liste.find((c) => c.id === params.get("c"));
+  const visibles = liste.filter((c) => (c.titre + c.interlocuteur).toLowerCase().includes(q.toLowerCase()));
 
   // Sur grand écran, la première conversation s'ouvre d'office.
   useEffect(() => {
-    if (!choisie && liste.length && window.matchMedia("(min-width: 1024px)").matches) router.replace(`${pathname}?c=${liste[0].demande.id}`, { scroll: false });
+    if (!choisie && liste.length && window.matchMedia("(min-width: 1024px)").matches) router.replace(`${pathname}?c=${liste[0].id}`, { scroll: false });
   }, [choisie, liste, pathname, router]);
 
   return (
@@ -238,14 +240,22 @@ export default function MessagerieView({ vue }: { vue: Auteur }) {
             />
           </label>
           <div className="flex-1 space-y-1 overflow-y-auto px-3 pb-3">
+            {chargement && <ChargementListe />}
+            {!chargement && liste.length === 0 && (
+              <p className="p-4 text-center text-sm text-slate-400">
+                {vue === "client"
+                  ? "Une conversation s'ouvre dès qu'un technicien accepte l'une de vos demandes."
+                  : "Une conversation s'ouvre dès que vous acceptez une demande."}
+              </p>
+            )}
             {visibles.map((c) => (
-              <Apercu key={c.demande.id} conv={c} vue={vue} actif={c.demande.id === choisie?.demande.id} href={`${pathname}?c=${c.demande.id}`} />
+              <Apercu key={c.id} conv={c} vue={vue} actif={c.id === choisie?.id} href={`${pathname}?c=${c.id}`} />
             ))}
           </div>
         </aside>
         <section className={cn("min-h-0", !choisie && "hidden lg:block")}>
           {choisie ? (
-            <Fil key={choisie.demande.id} conv={choisie} vue={vue} />
+            <Fil key={choisie.id} conv={choisie} vue={vue} onLu={recharger} />
           ) : (
             <div className="flex h-full items-center justify-center p-6">
               <EmptyState icon={MessageSquareText} title="Sélectionnez une conversation" text="Vos échanges avec chaque interlocuteur sont regroupés par mission." />

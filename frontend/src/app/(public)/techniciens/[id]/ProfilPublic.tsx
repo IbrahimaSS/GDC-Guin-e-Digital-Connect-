@@ -11,6 +11,7 @@ import { toast } from "@/components/motion/Toaster";
 import { Avatar, Button, Card, DispoBadge, LinkButton, Rating, Stars, VerificationBadge } from "@/components/ui";
 import { Tabs } from "@/components/ui/interactive";
 import { ProgressBar } from "@/components/motion/Charts";
+import { apiActive } from "@/lib/api";
 import { getMetier, NIVEAUX, type Avis, type Technicien } from "@/lib/data";
 
 type Onglet = "presentation" | "realisations" | "avis";
@@ -225,11 +226,24 @@ function avisAnciens(tech: Technicien): Avis[] {
 const PAR_PAGE = 5;
 
 function ListeAvis({ tech }: { tech: Technicien }) {
-  const tous = [...tech.avis, ...avisAnciens(tech)];
+  // Avec l'API : uniquement les vrais avis publiés, et leur vraie répartition.
+  const tous = apiActive ? tech.avis : [...tech.avis, ...avisAnciens(tech)];
   const [affiches, setAffiches] = useState(Math.min(PAR_PAGE, tous.length));
   const repartition = [5, 4, 3, 2, 1].map((n) => ({
     n,
-    pct: n === 5 ? 78 : n === 4 ? 16 : n === 3 ? 4 : n === 2 ? 2 : 0,
+    pct: apiActive
+      ? tous.length
+        ? Math.round((tous.filter((a) => a.note === n).length / tous.length) * 100)
+        : 0
+      : n === 5
+        ? 78
+        : n === 4
+          ? 16
+          : n === 3
+            ? 4
+            : n === 2
+              ? 2
+              : 0,
   }));
   return (
     <div className="grid gap-8 md:grid-cols-[280px_1fr]">

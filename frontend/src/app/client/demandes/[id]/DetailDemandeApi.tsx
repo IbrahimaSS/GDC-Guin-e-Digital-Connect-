@@ -1,14 +1,12 @@
 "use client";
 
 import { ClipboardList } from "lucide-react";
-import { useParams } from "next/navigation";
 import { EmptyState, LinkButton } from "@/components/ui";
 import { useDemande } from "@/lib/demandes";
 import DetailDemande from "./DetailDemande";
 
 /** Détail d'une demande chargée depuis l'API. */
-export default function DetailDemandeApi() {
-  const { id } = useParams<{ id: string }>();
+export default function DetailDemandeApi({ id }: { id: string }) {
   const { demande, chargement, erreur, recharger } = useDemande(id);
 
   if (chargement) {

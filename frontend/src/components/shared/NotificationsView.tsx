@@ -1,15 +1,19 @@
 "use client";
 
 import { Bell, BellOff, CheckCheck, ClipboardList, Info, ShieldCheck, Star, Trash2, Wrench, type LucideIcon } from "lucide-react";
+import { useRouter } from "next/navigation";
 import { useRef, useState } from "react";
 import { gsap, useGSAP } from "@/components/motion/gsap";
 import Reveal from "@/components/motion/Reveal";
 import { toast } from "@/components/motion/Toaster";
+import ChargementListe from "@/components/shared/ChargementListe";
 import { Button, Card, cn, EmptyState, PageHeader } from "@/components/ui";
 import { Tabs } from "@/components/ui/interactive";
+import { api, apiActive, texteErreur } from "@/lib/api";
 import type { Notification, TypeNotification } from "@/lib/data";
 import { cleNotifications, type Destinataire } from "@/lib/notifier";
 import { usePersistant } from "@/lib/stockage";
+import { useApi } from "@/lib/useApi";
 
 const AUCUNE: Notification[] = [];
 
@@ -23,17 +27,80 @@ const TYPES: Record<TypeNotification, { icon: LucideIcon; color: string; label: 
 
 type Filtre = "toutes" | "non_lues" | TypeNotification;
 
-export default function NotificationsView({ initial, destinataire }: { initial: Notification[]; destinataire: Destinataire }) {
-  // Notifications envoyées pendant la session (SMS / WhatsApp de chaque étape), puis l'historique.
+interface NotificationApi {
+  id: string;
+  type: TypeNotification;
+  titre: string;
+  texte: string;
+  lien: string | null;
+  lu: boolean;
+  createdAt: string;
+}
+
+/** « À l'instant », « Il y a 5 min », « Il y a 2 h », « Hier », « 12 oct. » */
+function ilYa(iso: string) {
+  const min = Math.round((Date.now() - new Date(iso).getTime()) / 60_000);
+  if (min < 1) return "À l'instant";
+  if (min < 60) return `Il y a ${min} min`;
+  if (min < 24 * 60) return `Il y a ${Math.round(min / 60)} h`;
+  if (min < 48 * 60) return "Hier";
+  return new Date(iso).toLocaleDateString("fr-FR", { day: "numeric", month: "short" });
+}
+
+/**
+ * Notifications de l'utilisateur. Avec l'API : celles du serveur (les actions y sont enregistrées) ;
+ * en démonstration : celles envoyées pendant la session, puis l'historique fictif.
+ */
+function useNotifications(initial: Notification[], destinataire: Destinataire) {
   const [recentes, setRecentes] = usePersistant(cleNotifications(destinataire), AUCUNE);
   const [historique, setHistorique] = useState(initial);
-  const items = [...recentes, ...historique];
-  const setItems = (maj: (prev: Notification[]) => Notification[]) => {
-    const suivantes = maj(items);
+  const distantes = useApi<NotificationApi[]>(apiActive ? "/notifications" : null);
+  // Modifications locales (lues, supprimées) appliquées en attendant le prochain chargement.
+  const [maj, setMaj] = useState<{ lues: Set<string>; supprimees: Set<string>; tout: boolean }>({ lues: new Set(), supprimees: new Set(), tout: false });
+
+  if (apiActive) {
+    const items: (Notification & { lien?: string })[] = (distantes.donnees ?? [])
+      .filter((n) => !maj.supprimees.has(n.id))
+      .map((n) => ({ id: n.id, type: n.type, titre: n.titre, texte: n.texte, date: ilYa(n.createdAt), lu: n.lu || maj.tout || maj.lues.has(n.id), lien: n.lien ?? undefined }));
+    const erreur = (e: unknown) => toast(texteErreur(e), "error");
+    return {
+      items,
+      chargement: distantes.chargement,
+      lire(id: string) {
+        if (items.find((n) => n.id === id)?.lu) return;
+        setMaj((m) => ({ ...m, lues: new Set(m.lues).add(id) }));
+        api(`/notifications/${id}/lu`, { methode: "PATCH" }).catch(erreur);
+      },
+      toutLire() {
+        setMaj((m) => ({ ...m, tout: true }));
+        api("/notifications/tout-lu", { methode: "POST" }).catch(erreur);
+      },
+      supprimer(id: string) {
+        setMaj((m) => ({ ...m, supprimees: new Set(m.supprimees).add(id) }));
+        api(`/notifications/${id}`, { methode: "DELETE" }).catch(erreur);
+      },
+    };
+  }
+
+  const items: (Notification & { lien?: string })[] = [...recentes, ...historique];
+  const setItems = (f: (prev: Notification[]) => Notification[]) => {
+    const suivantes = f(items);
     const ids = new Set(recentes.map((n) => n.id));
     setRecentes(suivantes.filter((n) => ids.has(n.id)));
     setHistorique(suivantes.filter((n) => !ids.has(n.id)));
   };
+  return {
+    items,
+    chargement: false,
+    lire: (id: string) => setItems((prev) => prev.map((p) => (p.id === id ? { ...p, lu: true } : p))),
+    toutLire: () => setItems((prev) => prev.map((n) => ({ ...n, lu: true }))),
+    supprimer: (id: string) => setItems((prev) => prev.filter((n) => n.id !== id)),
+  };
+}
+
+export default function NotificationsView({ initial, destinataire }: { initial: Notification[]; destinataire: Destinataire }) {
+  const router = useRouter();
+  const { items, chargement, lire, toutLire: toutMarquer, supprimer: retirer } = useNotifications(initial, destinataire);
   const [filtre, setFiltre] = useState<Filtre>("toutes");
   const list = useRef<HTMLDivElement>(null);
   const { contextSafe } = useGSAP({ scope: list });
@@ -52,12 +119,12 @@ export default function NotificationsView({ initial, destinataire }: { initial: 
       paddingBottom: 0,
       duration: 0.4,
       ease: "power2.in",
-      onComplete: () => setItems((prev) => prev.filter((n) => n.id !== id)),
+      onComplete: () => retirer(id),
     });
   });
 
   const toutLire = () => {
-    setItems((prev) => prev.map((n) => ({ ...n, lu: true })));
+    toutMarquer();
     toast("Toutes les notifications sont marquées comme lues");
   };
 
@@ -83,7 +150,9 @@ export default function NotificationsView({ initial, destinataire }: { initial: 
           ]}
         />
         <div ref={list} className="mt-4">
-          {visibles.length === 0 ? (
+          {chargement ? (
+            <ChargementListe />
+          ) : visibles.length === 0 ? (
             <EmptyState icon={filtre === "non_lues" ? BellOff : Bell} title="Aucune notification" text="Rien de nouveau pour ce filtre." />
           ) : (
             <Reveal className="space-y-2" deps={[filtre]} y={14} stagger={0.05}>
@@ -93,7 +162,10 @@ export default function NotificationsView({ initial, destinataire }: { initial: 
                   <div
                     key={n.id}
                     data-notif={n.id}
-                    onClick={() => setItems((prev) => prev.map((p) => (p.id === n.id ? { ...p, lu: true } : p)))}
+                    onClick={() => {
+                      lire(n.id);
+                      if (n.lien) router.push(n.lien);
+                    }}
                     className={cn(
                       "group flex cursor-pointer items-start gap-4 overflow-hidden rounded-xl border p-4 transition-colors",
                       n.lu ? "border-transparent hover:bg-slate-50" : "border-brand-100 bg-brand-50/50 hover:bg-brand-50",

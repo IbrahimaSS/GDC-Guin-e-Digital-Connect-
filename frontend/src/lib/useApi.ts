@@ -6,6 +6,8 @@ import { api, texteErreur } from "./api";
 interface Etat<T> {
   donnees?: T;
   erreur?: string;
+  /** Une réponse est arrivée (elle peut être vide : « aucun devis », par exemple). */
+  recu?: boolean;
   /** Chemin auquel correspond l'état (pour ignorer une réponse arrivée après un changement de page). */
   chemin?: string | null;
 }
@@ -22,7 +24,7 @@ export function useApi<T>(chemin: string | null) {
     if (!chemin) return;
     let actif = true;
     api<T>(chemin)
-      .then((donnees) => actif && setEtat({ donnees, chemin }))
+      .then((donnees) => actif && setEtat({ donnees, recu: true, chemin }))
       .catch((e) => actif && setEtat((p) => ({ ...p, erreur: texteErreur(e), chemin })));
     return () => {
       actif = false;
@@ -34,7 +36,7 @@ export function useApi<T>(chemin: string | null) {
   return {
     donnees: aJour ? etat.donnees : undefined,
     erreur: aJour ? etat.erreur : undefined,
-    chargement: Boolean(chemin) && (!aJour || (etat.donnees === undefined && !etat.erreur)),
+    chargement: Boolean(chemin) && (!aJour || (!etat.recu && !etat.erreur)),
     recharger,
   };
 }

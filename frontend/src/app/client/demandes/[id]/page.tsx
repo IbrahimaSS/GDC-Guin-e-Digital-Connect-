@@ -16,12 +16,18 @@ export async function generateMetadata({ params }: PageProps<"/client/demandes/[
   return { title: getDemande(id)?.titre ?? "Demande" };
 }
 
+/** L'identifiant est lu dans la frontière Suspense (préchargement partiel), puis la demande est chargée dans le navigateur. */
+async function DemandeDepuisApi({ params }: { params: PageProps<"/client/demandes/[id]">["params"] }) {
+  const { id } = await params;
+  return <DetailDemandeApi id={id} />;
+}
+
 export default async function DetailDemandePage({ params }: PageProps<"/client/demandes/[id]">) {
   // Avec l'API, la demande est chargée dans le navigateur (elle appartient à l'utilisateur connecté).
   if (apiActive) {
     return (
-      <Suspense>
-        <DetailDemandeApi />
+      <Suspense fallback={<div className="h-72 animate-pulse rounded-2xl bg-slate-100" />}>
+        <DemandeDepuisApi params={params} />
       </Suspense>
     );
   }

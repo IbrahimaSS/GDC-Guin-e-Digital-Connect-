@@ -1,27 +1,54 @@
 "use client";
 
-import { ChevronLeft, Heart, ThumbsDown, ThumbsUp } from "lucide-react";
+import { ChevronLeft, Heart, Star, ThumbsDown, ThumbsUp } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useRef, useState, type FormEvent } from "react";
 import { gsap, useGSAP } from "@/components/motion/gsap";
 import Reveal from "@/components/motion/Reveal";
 import { toast } from "@/components/motion/Toaster";
-import { Avatar, Button, Card, cn, Field, Textarea } from "@/components/ui";
+import { Avatar, Button, Card, cn, EmptyState, Field, LinkButton, Textarea } from "@/components/ui";
 import { StarInput } from "@/components/ui/interactive";
+import { api, apiActive, texteErreur } from "@/lib/api";
 import { getMetier, getTechnicien, type Demande } from "@/lib/data";
+import { technicienDe, useDemande } from "@/lib/demandes";
 
-const CRITERES = ["Ponctualité", "Qualité du travail", "Rapport qualité / prix", "Communication"];
+// Critère affiché → champ attendu par l'API.
+const CRITERES = { Ponctualité: "ponctualite", "Qualité du travail": "qualite", "Rapport qualité / prix": "prix", Communication: "communication" } as const;
 const TAGS = ["Travail soigné", "Rapide", "Bons conseils", "Très poli", "Prix honnête", "Matériel de qualité"];
+
+/** Évaluation d'une demande chargée depuis l'API. */
+export function EvaluationApi({ id }: { id: string }) {
+  const { demande, chargement, erreur } = useDemande(id);
+  if (chargement) return <div className="mx-auto h-80 max-w-2xl animate-pulse rounded-2xl bg-slate-100" aria-busy="true" />;
+  if (!demande) return <EmptyState icon={Star} title="Demande introuvable" text={erreur ?? "Cette demande n'existe pas ou ne vous appartient pas."} />;
+  if (demande.statut !== "terminee" || demande.evaluee) {
+    return (
+      <div className="mx-auto max-w-xl space-y-4 text-center">
+        <EmptyState
+          icon={Star}
+          title={demande.evaluee ? "Avis déjà publié" : "Mission pas encore terminée"}
+          text={demande.evaluee ? "Merci, vous avez déjà donné votre avis sur cette mission." : "Vous pourrez donner votre avis une fois l'intervention terminée."}
+        />
+        <LinkButton href={`/client/demandes/${demande.id}`} variant="outline">
+          Retour à la demande
+        </LinkButton>
+      </div>
+    );
+  }
+  return <EvaluationForm demande={demande} />;
+}
 
 export default function EvaluationForm({ demande }: { demande: Demande }) {
   const router = useRouter();
   const ref = useRef<HTMLDivElement>(null);
-  const tech = getTechnicien(demande.technicienId ?? "mamadou-diallo")!;
+  const tech = technicienDe(demande) ?? getTechnicien("mamadou-diallo")!;
   const [note, setNote] = useState(0);
   const [criteres, setCriteres] = useState<Record<string, number>>({});
   const [tags, setTags] = useState<string[]>([]);
+  const [commentaire, setCommentaire] = useState("");
   const [recommande, setRecommande] = useState<boolean | null>(null);
+  const [envoi, setEnvoi] = useState(false);
 
   useGSAP(
     () => {
@@ -30,10 +57,30 @@ export default function EvaluationForm({ demande }: { demande: Demande }) {
     { dependencies: [note > 0], scope: ref },
   );
 
-  function envoyer(e: FormEvent) {
+  async function envoyer(e: FormEvent) {
     e.preventDefault();
     if (!note) return toast("Choisissez une note globale", "error");
-    toast("Merci ! Votre avis aide toute la communauté GDC 🙏");
+    if (apiActive) {
+      // Le détail des critères n'est transmis que s'il est complet.
+      const detail = Object.entries(CRITERES).map(([libelle, cle]) => [cle, criteres[libelle]] as const);
+      setEnvoi(true);
+      try {
+        await api(`/demandes/${encodeURIComponent(demande.id)}/avis`, {
+          methode: "POST",
+          corps: {
+            note,
+            criteres: detail.every(([, v]) => v) ? Object.fromEntries(detail) : undefined,
+            tags,
+            commentaire: commentaire.trim() || undefined,
+            recommande: recommande ?? undefined,
+          },
+        });
+      } catch (err) {
+        setEnvoi(false);
+        return toast(texteErreur(err), "error");
+      }
+    }
+    toast("Merci ! Votre avis aide toute la communauté GDC.");
     router.push(`/client/demandes/${demande.id}`);
   }
 
@@ -61,7 +108,7 @@ export default function EvaluationForm({ demande }: { demande: Demande }) {
               <Card className="mt-5 p-6">
                 <h2 className="mb-4 font-bold text-slate-900">Détaillez votre note</h2>
                 <ul className="space-y-4">
-                  {CRITERES.map((c) => (
+                  {Object.keys(CRITERES).map((c) => (
                     <li key={c} className="flex items-center justify-between gap-4">
                       <span className="text-sm font-medium text-slate-700">{c}</span>
                       <StarInput value={criteres[c] ?? 0} onChange={(v) => setCriteres({ ...criteres, [c]: v })} size="size-6" />
@@ -88,7 +135,12 @@ export default function EvaluationForm({ demande }: { demande: Demande }) {
                   ))}
                 </div>
                 <Field label="Commentaire (optionnel)" className="mt-5">
-                  <Textarea placeholder="Votre avis aidera d'autres clients à faire leur choix…" />
+                  <Textarea
+                    maxLength={1000}
+                    value={commentaire}
+                    onChange={(e) => setCommentaire(e.target.value)}
+                    placeholder="Votre avis aidera d'autres clients à faire leur choix…"
+                  />
                 </Field>
                 <p className="mb-2 mt-5 text-sm font-semibold text-slate-700">Recommanderiez-vous ce professionnel ?</p>
                 <div className="grid grid-cols-2 gap-3">
@@ -111,8 +163,8 @@ export default function EvaluationForm({ demande }: { demande: Demande }) {
           )}
 
           <div className="mt-5 flex flex-col gap-2 sm:flex-row-reverse">
-            <Button type="submit" size="lg" className="flex-1" disabled={!note}>
-              <Heart className="size-4" /> Publier mon avis
+            <Button type="submit" size="lg" className="flex-1" disabled={!note || envoi}>
+              <Heart className="size-4" /> {envoi ? "Publication…" : "Publier mon avis"}
             </Button>
             <Button variant="ghost" size="lg" onClick={() => router.push("/client/demandes")}>
               Plus tard

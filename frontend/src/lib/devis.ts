@@ -19,6 +19,8 @@ export interface LigneDevis {
 }
 
 export interface Paiement {
+  /** Espèces : en attente tant que le technicien n'a pas confirmé la réception (API). */
+  enAttente?: boolean;
   moyen: MoyenPaiement;
   numero?: string;
   reference: string;

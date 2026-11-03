@@ -1,5 +1,3 @@
-"use client";
-
 // Demandes d'intervention : lecture depuis l'API et conversion au format des écrans (type Demande de data.ts).
 // En démonstration (sans API), les écrans gardent les données fictives.
 
