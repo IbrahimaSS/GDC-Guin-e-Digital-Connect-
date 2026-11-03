@@ -1,11 +1,14 @@
 "use client";
 
 import { CheckCircle2, FileText, Plus, Send, Trash2, Wallet, XCircle } from "lucide-react";
+import { useState } from "react";
 import Reveal from "@/components/motion/Reveal";
+import { toast } from "@/components/motion/Toaster";
 import { Badge, Button, Card, cn, Input, Textarea, type Tone } from "@/components/ui";
+import { texteErreur } from "@/lib/api";
 import { formatGNF, type Demande } from "@/lib/data";
-import { COMMISSION, MOYENS, sousTotal, totalDevis, useDevis, type StatutDevis } from "@/lib/devis";
-import { notifier } from "@/lib/notifier";
+import { MOYENS, sousTotal, totalDevis, type StatutDevis } from "@/lib/devis";
+import { useDevisTechnicien } from "@/lib/devisApi";
 
 export const STATUTS_DEVIS: Record<StatutDevis, [Tone, string]> = {
   brouillon: ["slate", "Brouillon"],
@@ -17,20 +20,33 @@ export const STATUTS_DEVIS: Record<StatutDevis, [Tone, string]> = {
 
 /** Rédaction et envoi du devis par le technicien. */
 export default function DevisEditeur({ mission, technicien }: { mission: Demande; technicien: string }) {
-  const [devis, setDevis] = useDevis(mission.id);
+  const { devis, setDevis, envoyer: envoyerDevis, confirmerEspeces, chargement, commission, especesAConfirmer } = useDevisTechnicien(mission, technicien);
+  const [action, setAction] = useState(false);
   const modifiable = devis.statut === "brouillon" || devis.statut === "refuse";
   const total = totalDevis(devis);
-  const net = Math.round(total * (1 - COMMISSION));
+  const net = Math.round(total * (1 - commission));
 
   const majLigne = (id: string, champ: "libelle" | "quantite" | "prix", v: string) =>
     setDevis((d) => ({ ...d, lignes: d.lignes.map((l) => (l.id === id ? { ...l, [champ]: champ === "libelle" ? v : Math.max(0, Number(v) || 0) } : l)) }));
 
+  async function executer(f: () => Promise<void>, succes: string) {
+    setAction(true);
+    try {
+      await f();
+      toast(succes);
+    } catch (e) {
+      toast(texteErreur(e), "error");
+    } finally {
+      setAction(false);
+    }
+  }
+
   function envoyer() {
     if (!devis.lignes.length || devis.lignes.some((l) => !l.libelle.trim())) return;
-    const heure = new Date().toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
-    setDevis((d) => ({ ...d, statut: "envoye", envoyeLe: `Aujourd'hui · ${heure}` }));
-    notifier("devis_envoye", { technicien, client: mission.client, mission: mission.titre, montant: formatGNF(total), numero: mission.clientTel });
+    executer(envoyerDevis, "Devis envoyé : le client est prévenu par SMS.");
   }
+
+  if (chargement) return <div className="h-48 animate-pulse rounded-2xl bg-slate-100" aria-busy="true" />;
 
   const [tone, label] = STATUTS_DEVIS[devis.statut];
 
@@ -113,13 +129,13 @@ export default function DevisEditeur({ mission, technicien }: { mission: Demande
           <dd>{formatGNF(total)}</dd>
         </div>
         <div className="flex justify-between text-xs text-slate-500">
-          <dt>Vous recevrez (commission GDC {COMMISSION * 100} % déduite)</dt>
+          <dt>Vous recevrez (commission GDC {Math.round(commission * 100)} % déduite)</dt>
           <dd className="font-semibold text-emerald-600">{formatGNF(net)}</dd>
         </div>
       </dl>
 
       {modifiable ? (
-        <Button size="lg" className="mt-5 w-full" onClick={envoyer} disabled={!devis.lignes.length || devis.lignes.some((l) => !l.libelle.trim())}>
+        <Button size="lg" className="mt-5 w-full" onClick={envoyer} disabled={action || !devis.lignes.length || devis.lignes.some((l) => !l.libelle.trim())}>
           <Send className="size-4" /> {devis.statut === "refuse" ? "Renvoyer le devis" : "Envoyer le devis au client"}
         </Button>
       ) : (
@@ -128,6 +144,15 @@ export default function DevisEditeur({ mission, technicien }: { mission: Demande
             <>
               <CheckCircle2 className="size-4" /> Payé par {MOYENS[devis.paiement!.moyen].label} le {devis.paiement!.date} · versement à la fin de la mission.
             </>
+          ) : especesAConfirmer ? (
+            <span className="flex w-full flex-col gap-3 rounded-xl bg-amber-50 p-3 text-amber-800 sm:flex-row sm:items-center">
+              <span className="flex flex-1 items-center gap-2">
+                <Wallet className="size-4 shrink-0" /> Le client paie {formatGNF(total)} en espèces. Confirmez dès que vous avez reçu l&apos;argent.
+              </span>
+              <Button size="sm" disabled={action} onClick={() => executer(confirmerEspeces, "Paiement en espèces confirmé.")}>
+                <CheckCircle2 className="size-4" /> J&apos;ai reçu le paiement
+              </Button>
+            </span>
           ) : devis.statut === "accepte" ? (
             <>
               <Wallet className="size-4" /> Devis accepté, en attente du paiement du client.

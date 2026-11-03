@@ -26,6 +26,7 @@ export interface TechnicienCarteApi {
 export interface TechnicienProfilApi extends TechnicienCarteApi {
   bio: string;
   disponibilites: string;
+  tarifs: { prestation: string; prix: number }[];
   telephone: string;
   inscritLe: string;
   realisations: { id: string; titre: string; categorie: string; imageUrl: string }[];
@@ -53,6 +54,7 @@ export function versTechnicien(t: TechnicienCarteApi | TechnicienProfilApi): Tec
     disponibilites: profil?.disponibilites ?? "",
     photo: t.photoUrl ?? maquette?.photo ?? "/images/technicien-antenne.jpg",
     realisations: profil?.realisations.map((r) => ({ titre: r.titre, categorie: r.categorie, image: r.imageUrl })) ?? [],
+    tarifs: profil?.tarifs ?? [],
     avis: profil?.avis.map((a) => ({ id: a.id, auteur: a.auteur, note: a.note, commentaire: a.commentaire ?? "", date: formaterDate(a.date), mission: a.mission })) ?? [],
     inscrit: profil ? formaterDate(profil.inscritLe) : "",
     statut: "actif",

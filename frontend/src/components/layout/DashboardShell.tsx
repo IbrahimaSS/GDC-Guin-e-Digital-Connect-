@@ -39,10 +39,10 @@ import PageTransition from "@/components/motion/PageTransition";
 import { toast } from "@/components/motion/Toaster";
 import ThemeToggle from "@/components/ui/ThemeToggle";
 import { Avatar, cn, Logo } from "@/components/ui";
-import { apiActive } from "@/lib/api";
+import { api, apiActive } from "@/lib/api";
 import { deconnecter } from "@/lib/auth";
 import type { Role } from "@/lib/data";
-import { ESPACE_ROLE, lireSession, useSession, type UtilisateurApi } from "@/lib/session";
+import { ESPACE_ROLE, lireSession, mettreAJourUtilisateur, useSession, type UtilisateurApi } from "@/lib/session";
 
 interface NavItem {
   href: string;
@@ -355,6 +355,14 @@ function useAccesEspace(role: Role) {
     if (!s) router.replace(`/connexion?redirect=${encodeURIComponent(pathname)}`);
     else if (ESPACE_ROLE[s.utilisateur.role] !== HOME[role]) router.replace(ESPACE_ROLE[s.utilisateur.role]);
   }, [session, pathname, role, router]);
+
+  // Profil rafraîchi à l'ouverture de l'espace (niveau validé, disponibilité… modifiés depuis la connexion).
+  useEffect(() => {
+    if (!apiActive || !lireSession()) return;
+    api<UtilisateurApi>("/moi")
+      .then(mettreAJourUtilisateur)
+      .catch(() => undefined);
+  }, []);
 
   return !apiActive || (session !== null && ESPACE_ROLE[session.utilisateur.role] === HOME[role]);
 }

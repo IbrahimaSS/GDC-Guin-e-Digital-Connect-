@@ -12,7 +12,7 @@ import { Avatar, Button, Card, DispoBadge, LinkButton, Rating, Stars, Verificati
 import { Tabs } from "@/components/ui/interactive";
 import { ProgressBar } from "@/components/motion/Charts";
 import { apiActive } from "@/lib/api";
-import { getMetier, NIVEAUX, type Avis, type Technicien } from "@/lib/data";
+import { formatGNF, getMetier, NIVEAUX, type Avis, type Technicien } from "@/lib/data";
 
 type Onglet = "presentation" | "realisations" | "avis";
 
@@ -157,7 +157,21 @@ function Presentation({ tech, onVoirAvis }: { tech: Technicien; onVoirAvis: () =
     <Reveal className="grid gap-8 md:grid-cols-[1.6fr_1fr]" stagger={0.12}>
       <div>
         <h2 className="mb-2 font-bold text-slate-900">À propos</h2>
-        <p className="leading-relaxed text-slate-600">{tech.bio}</p>
+        <p className="leading-relaxed text-slate-600">{tech.bio || "Ce professionnel n'a pas encore rédigé sa présentation."}</p>
+        {tech.tarifs && tech.tarifs.length > 0 && (
+          <div className="mt-6 rounded-2xl border border-slate-200 p-4">
+            <h3 className="mb-2 text-sm font-bold text-slate-900">Tarifs indicatifs</h3>
+            <ul className="divide-y divide-slate-100 text-sm">
+              {tech.tarifs.map((t) => (
+                <li key={t.prestation} className="flex justify-between gap-3 py-2">
+                  <span className="text-slate-600">{t.prestation}</span>
+                  <span className="whitespace-nowrap font-semibold text-slate-900">{formatGNF(t.prix)}</span>
+                </li>
+              ))}
+            </ul>
+            <p className="mt-2 text-xs text-slate-400">Le prix définitif est celui du devis envoyé après diagnostic.</p>
+          </div>
+        )}
         <ul className="mt-6 space-y-3">
           {infos.map(({ icon: Icon, label, valeur }) => (
             <li key={label} className="flex items-start gap-3 text-sm">

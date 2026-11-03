@@ -1,7 +1,8 @@
 "use client";
 
-import { CalendarDays, Check, ChevronLeft, KeyRound, MapPin, MessageCircle, MessageSquareText, Phone, Play, User, Wallet, Zap } from "lucide-react";
+import { CalendarDays, Check, ChevronLeft, KeyRound, MapPin, MessageCircle, MessageSquareText, Navigation, Phone, Play, Undo2, User, Wallet, Zap } from "lucide-react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useState } from "react";
 import Reveal from "@/components/motion/Reveal";
 import { toast } from "@/components/motion/Toaster";
@@ -15,36 +16,96 @@ import { codeMission, verifierCode } from "@/lib/mission";
 import { notifier } from "@/lib/notifier";
 import { useStatutDemande } from "@/lib/stockage";
 import { Avatar, Button, Card, cn, Field, Input, LinkButton, MetierIcon, Textarea } from "@/components/ui";
-import { formatGNF, TECHNICIEN_CONNECTE as moi, type Demande, type StatutDemande } from "@/lib/data";
+import { apiActive, texteErreur } from "@/lib/api";
+import { formatGNF, TECHNICIEN_CONNECTE as maquette, type Demande, type StatutDemande } from "@/lib/data";
+import { technicienDe } from "@/lib/demandes";
+import { accepterMission, demarrerMission, desisterMission, signalerEnRoute, terminerMission } from "@/lib/missions";
 
 const ETAPES = ["Demande créée", "Acceptée par le technicien", "Intervention en cours", "Mission terminée", "Évaluation"];
 const RANG: Record<StatutDemande, number> = { envoyee: 1, acceptee: 2, en_cours: 3, terminee: 4, annulee: 1 };
 
-export default function DetailMission({ mission }: { mission: Demande }) {
-  const [statut, setStatut] = useStatutDemande<StatutDemande>(mission.id, mission.statut);
+/** `onChange` : recharger la mission après une action (avec l'API). */
+export default function DetailMission({ mission, onChange }: { mission: Demande; onChange?: () => void }) {
+  const router = useRouter();
+  // En démonstration, le statut vit dans le navigateur ; avec l'API, il vient du serveur.
+  const [statutLocal, setStatutLocal] = useStatutDemande<StatutDemande>(mission.id, mission.statut);
+  const statut = apiActive ? mission.statut : statutLocal;
+  const moi = (apiActive && technicienDe(mission)) || maquette;
   const [arrivee, setArrivee] = useState(false);
   const [code, setCode] = useState("");
   const [erreurCode, setErreurCode] = useState("");
+  const [envoi, setEnvoi] = useState(false);
   const vars = { client: mission.client, technicien: moi.nom, mission: mission.titre, code: codeMission(mission.id), numero: mission.clientTel };
+  const telClient = mission.clientTel.replace(/\D/g, "");
+
+  /** Exécute une étape auprès de l'API puis recharge la mission ; en démonstration, met à jour le statut local. */
+  async function etape(appel: () => Promise<unknown>, succes: string) {
+    setEnvoi(true);
+    try {
+      await appel();
+      toast(succes);
+      onChange?.();
+      return true;
+    } catch (e) {
+      toast(texteErreur(e), "error");
+      return false;
+    } finally {
+      setEnvoi(false);
+    }
+  }
 
   // Passage à l'étape suivante + notification SMS / WhatsApp du client.
-  function avancer(suivant: StatutDemande) {
-    setStatut(suivant);
+  function avancer(suivant: StatutDemande, msg: string) {
+    if (apiActive) {
+      if (suivant === "acceptee") return etape(() => accepterMission(mission.id), msg);
+      if (suivant === "terminee") return etape(() => terminerMission(mission.id), msg);
+      return;
+    }
+    setStatutLocal(suivant);
     if (suivant === "acceptee") notifier("demande_acceptee", vars);
     if (suivant === "en_cours") notifier("intervention_demarree", vars);
     if (suivant === "terminee") notifier("mission_terminee", vars);
+    toast(msg);
   }
 
-  function confirmerArrivee(saisie: string) {
-    if (!verifierCode(mission.id, saisie)) {
-      setErreurCode("Code incorrect. Demandez au client le code affiché dans son application.");
-      return;
+  async function confirmerArrivee(saisie: string) {
+    if (apiActive) {
+      // Le serveur vérifie le code (ou le QR code) : c'est la preuve de passage.
+      setEnvoi(true);
+      try {
+        await demarrerMission(mission.id, saisie);
+      } catch (e) {
+        return setErreurCode(texteErreur(e));
+      } finally {
+        setEnvoi(false);
+      }
+      onChange?.();
+    } else {
+      if (!verifierCode(mission.id, saisie)) {
+        setErreurCode("Code incorrect. Demandez au client le code affiché dans son application.");
+        return;
+      }
+      setStatutLocal("en_cours");
+      notifier("intervention_demarree", vars);
     }
     setArrivee(false);
     setCode("");
     setErreurCode("");
-    avancer("en_cours");
     toast("Arrivée confirmée : l'intervention commence");
+  }
+
+  function enRoute() {
+    if (!apiActive) {
+      notifier("technicien_en_route", vars);
+      return toast("Le client est prévenu que vous êtes en route.");
+    }
+    etape(() => signalerEnRoute(mission.id), "Le client est prévenu que vous êtes en route.");
+  }
+
+  async function desister() {
+    if (await etape(() => desisterMission(mission.id), "Vous vous êtes retiré de la mission : elle est de nouveau proposée aux autres professionnels.")) {
+      router.push("/technicien/demandes");
+    }
   }
   const [checklist, setChecklist] = useState([
     { label: "Diagnostic réalisé", fait: statut !== "envoyee" && statut !== "acceptee" },
@@ -53,11 +114,13 @@ export default function DetailMission({ mission }: { mission: Demande }) {
     { label: "Tests de fonctionnement", fait: statut === "terminee" },
   ]);
 
-  const chronologie = ETAPES.map((label, i) => ({
-    label,
-    fait: i < RANG[statut],
-    date: i < RANG[statut] ? mission.chronologie[i]?.date ?? "22 oct. · à l'instant" : undefined,
-  }));
+  const chronologie = apiActive
+    ? mission.chronologie
+    : ETAPES.map((label, i) => ({
+        label,
+        fait: i < RANG[statut],
+        date: i < RANG[statut] ? (mission.chronologie[i]?.date ?? "22 oct. · à l'instant") : undefined,
+      }));
 
   const action =
     statut === "envoyee"
@@ -88,8 +151,8 @@ export default function DetailMission({ mission }: { mission: Demande }) {
               <KeyRound className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-slate-400" />
               <Input value={code} onChange={(e) => setCode(e.target.value.replace(/\D/g, "").slice(0, 4))} inputMode="numeric" placeholder="Code à 4 chiffres" className="pl-9 font-mono tracking-[0.3em]" aria-label="Code d'intervention" />
             </div>
-            <Button type="submit" disabled={code.length !== 4}>
-              Valider
+            <Button type="submit" disabled={code.length !== 4 || envoi}>
+              {envoi ? "Vérification…" : "Valider"}
             </Button>
           </form>
           {erreurCode && <p className="text-sm font-medium text-red-600">{erreurCode}</p>}
@@ -105,16 +168,28 @@ export default function DetailMission({ mission }: { mission: Demande }) {
             <h1 className="text-2xl font-extrabold text-brand-950">{mission.titre}</h1>
           </div>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <StatutDemandeBadge statut={statut} />
+          {statut === "acceptee" && (
+            <>
+              {apiActive && (
+                <Button variant="ghost" onClick={desister} disabled={envoi}>
+                  <Undo2 className="size-4" /> Me retirer
+                </Button>
+              )}
+              <Button variant="outline" onClick={enRoute} disabled={envoi}>
+                <Navigation className="size-4" /> Je suis en route
+              </Button>
+            </>
+          )}
           {action && (
             <Button
               size="lg"
+              disabled={envoi}
               onClick={() => {
                 // Le démarrage exige le code du client, preuve de la présence sur place.
                 if (action.next === "en_cours") return setArrivee(true);
-                avancer(action.next);
-                toast(action.msg);
+                avancer(action.next, action.msg);
               }}
             >
               <action.icon className="size-4" /> {action.label}
@@ -122,6 +197,9 @@ export default function DetailMission({ mission }: { mission: Demande }) {
           )}
         </div>
       </div>
+      {statut === "annulee" && (
+        <Card className="mb-6 border-slate-200 bg-slate-50 p-5 text-sm text-slate-600">Cette demande a été annulée par le client.</Card>
+      )}
 
       <div className="grid gap-6 xl:grid-cols-[1.5fr_1fr]">
         <Reveal className="space-y-6">
@@ -191,17 +269,28 @@ export default function DetailMission({ mission }: { mission: Demande }) {
                 </p>
               </div>
             </div>
-            <div className="mt-4 grid grid-cols-2 gap-2">
-              <a href={`tel:${mission.clientTel.replace(/\s/g, "")}`} className="flex items-center justify-center gap-2 rounded-xl bg-brand-50 py-2.5 text-sm font-semibold text-brand-700 transition hover:bg-brand-600 hover:text-white">
-                <Phone className="size-4" /> Appeler
-              </a>
-              <a href="#" className="flex items-center justify-center gap-2 rounded-xl bg-emerald-50 py-2.5 text-sm font-semibold text-emerald-700 transition hover:bg-emerald-500 hover:text-white">
-                <MessageCircle className="size-4" /> WhatsApp
-              </a>
-            </div>
-            <LinkButton href={`/technicien/messages?c=${mission.id}`} variant="outline" className="mt-2 w-full">
-              <MessageSquareText className="size-4" /> Écrire au client
-            </LinkButton>
+            {telClient ? (
+              <div className="mt-4 grid grid-cols-2 gap-2">
+                <a href={`tel:+${telClient}`} className="flex items-center justify-center gap-2 rounded-xl bg-brand-50 py-2.5 text-sm font-semibold text-brand-700 transition hover:bg-brand-600 hover:text-white">
+                  <Phone className="size-4" /> Appeler
+                </a>
+                <a
+                  href={`https://wa.me/${telClient}`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="flex items-center justify-center gap-2 rounded-xl bg-emerald-50 py-2.5 text-sm font-semibold text-emerald-700 transition hover:bg-emerald-500 hover:text-white"
+                >
+                  <MessageCircle className="size-4" /> WhatsApp
+                </a>
+              </div>
+            ) : (
+              <p className="mt-4 rounded-xl bg-slate-50 p-3 text-xs text-slate-500">Le numéro du client vous sera communiqué dès que vous aurez accepté la mission.</p>
+            )}
+            {statut !== "envoyee" && (
+              <LinkButton href={`/technicien/messages?c=${mission.id}`} variant="outline" className="mt-2 w-full">
+                <MessageSquareText className="size-4" /> Écrire au client
+              </LinkButton>
+            )}
           </Card>
           <Card className="p-6">
             <h2 className="mb-5 font-bold text-slate-900">Suivi de la mission</h2>

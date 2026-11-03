@@ -1,11 +1,12 @@
 "use client";
 
-// Devis et paiement d'une demande, côté client : la même interface en démonstration (navigateur)
-// et avec l'API, pour que les écrans n'aient pas à distinguer les deux.
+// Devis et paiement d'une demande, côté client et côté technicien : la même interface en démonstration
+// (navigateur) et avec l'API, pour que les écrans n'aient pas à distinguer les deux.
 
+import { useState } from "react";
 import { api, apiActive } from "./api";
 import { formatGNF, type Demande } from "./data";
-import { referencePaiement, totalDevis, useDevis, type Devis, type MoyenPaiement, type Paiement } from "./devis";
+import { COMMISSION, referencePaiement, totalDevis, useDevis, type Devis, type MoyenPaiement, type Paiement } from "./devis";
 import { notifier } from "./notifier";
 import { useApi } from "./useApi";
 
@@ -112,4 +113,59 @@ export function useDevisClient(demande: Demande, technicien: string) {
   }
 
   return { devis, chargement, accepter, refuser, payer };
+}
+
+/**
+ * Devis vu par le technicien : rédaction (brouillon local jusqu'à l'envoi), envoi au client,
+ * confirmation d'un paiement reçu en espèces.
+ */
+export function useDevisTechnicien(mission: Demande, technicien: string) {
+  const [local, setLocal] = useDevis(mission.id);
+  const chemin = `/demandes/${encodeURIComponent(mission.id)}`;
+  const { donnees, chargement, recharger } = useApi<(DevisApi & { tauxCommission?: number }) | undefined>(apiActive ? `${chemin}/devis` : null);
+  // Modifications en cours, tant que le devis n'est pas envoyé (avec l'API).
+  const [brouillon, setBrouillon] = useState<Devis | null>(null);
+  const serveur: Devis = donnees ? versDevis(donnees) : { ...VIDE, deplacement: 50000 };
+  const devis = apiActive ? (brouillon ?? serveur) : local;
+
+  function setDevis(f: Devis | ((d: Devis) => Devis)) {
+    if (!apiActive) return setLocal(f);
+    setBrouillon((prec) => (typeof f === "function" ? f(prec ?? serveur) : f));
+  }
+
+  async function envoyer() {
+    if (!apiActive) {
+      const heure = new Date().toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
+      setLocal((d) => ({ ...d, statut: "envoye", envoyeLe: `Aujourd'hui · ${heure}` }));
+      notifier("devis_envoye", { technicien, client: mission.client, mission: mission.titre, montant: formatGNF(totalDevis(devis)), numero: mission.clientTel });
+      return;
+    }
+    await api(`${chemin}/devis`, {
+      methode: "PUT",
+      corps: {
+        lignes: devis.lignes.map(({ libelle, quantite, prix }) => ({ libelle: libelle.trim(), quantite, prix })),
+        deplacement: devis.deplacement,
+        note: devis.note?.trim() || undefined,
+      },
+    });
+    await api(`${chemin}/devis/envoyer`, { methode: "POST" });
+    setBrouillon(null);
+    recharger();
+  }
+
+  async function confirmerEspeces() {
+    await api(`${chemin}/paiement/confirmer`, { methode: "POST" });
+    recharger();
+  }
+
+  return {
+    devis,
+    setDevis,
+    envoyer,
+    confirmerEspeces,
+    chargement,
+    commission: donnees?.tauxCommission ?? COMMISSION,
+    /** Paiement en espèces déclaré par le client, à confirmer à réception. */
+    especesAConfirmer: apiActive && devis.statut === "accepte" && devis.paiement?.moyen === "especes" && devis.paiement.enAttente,
+  };
 }

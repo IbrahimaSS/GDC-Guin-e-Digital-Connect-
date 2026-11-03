@@ -86,7 +86,15 @@ export function versDemande(d: DemandeApi): Demande {
     budget: d.budget ?? undefined,
     evaluee: Boolean(d.avis),
     chronologie: chronologie(d, statut),
-    api: { technicien: d.technicien ?? undefined, code: d.codeIntervention, qr: d.qrIntervention, photos: d.photos },
+    api: {
+      technicien: d.technicien ?? undefined,
+      code: d.codeIntervention,
+      qr: d.qrIntervention,
+      photos: d.photos,
+      creeLe: d.creeLe,
+      termineeLe: d.termineeLe,
+      dateSouhaitee: d.dateSouhaitee,
+    },
   };
 }
 

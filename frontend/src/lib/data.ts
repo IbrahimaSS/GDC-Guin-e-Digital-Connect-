@@ -87,6 +87,8 @@ export interface Technicien {
   /** Photo de profil (dossier public/images). */
   photo: string;
   realisations: { titre: string; categorie: string; image: string }[];
+  /** Tarifs indicatifs (API) */
+  tarifs?: { prestation: string; prix: number }[];
   avis: Avis[];
   inscrit: string;
   statut: "actif" | "suspendu" | "en_attente";
@@ -401,6 +403,10 @@ export interface Demande {
     qr?: string;
     /** Photos jointes à la demande */
     photos?: string[];
+    /** Dates au format ISO (graphiques, agenda) */
+    creeLe?: string;
+    termineeLe?: string | null;
+    dateSouhaitee?: string | null;
   };
 }
 
