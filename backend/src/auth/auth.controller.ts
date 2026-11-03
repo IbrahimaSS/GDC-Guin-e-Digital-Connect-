@@ -21,12 +21,14 @@ export class AuthController {
   constructor(private readonly auth: AuthService) {}
 
   @Public()
-  @Throttle({ default: { limit: 5, ttl: 60_000 } })
+  // Par adresse IP : beaucoup d'abonnés mobiles partagent la même adresse de l'opérateur.
+  // La vraie limite est par numéro (3 codes / 10 min, dans le service).
+  @Throttle({ default: { limit: 20, ttl: 60_000 } })
   @Post('otp/demander')
   @HttpCode(200)
   @ApiOperation({ summary: 'Envoie un code de connexion par SMS' })
   demander(@Body() dto: DemanderCodeDto) {
-    return this.auth.demanderCode(dto.telephone);
+    return this.auth.demanderCode(dto.telephone, dto.but);
   }
 
   @Public()

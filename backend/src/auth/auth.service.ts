@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   ForbiddenException,
   HttpException,
   HttpStatus,
@@ -23,7 +24,7 @@ import {
   INCLURE_UTILISATEUR,
   presenterUtilisateur,
 } from '../users/presentation.js';
-import type { InscriptionDto } from './auth.dto.js';
+import type { ButCode, InscriptionDto } from './auth.dto.js';
 
 const MAX_CODES_PAR_PERIODE = 3;
 const PERIODE_CODES_MS = 10 * 60 * 1000;
@@ -54,8 +55,27 @@ export class AuthService {
   }
 
   /** Envoie un code de connexion à 6 chiffres par SMS (3 demandes maximum par 10 minutes). */
-  async demanderCode(saisie: string) {
+  async demanderCode(saisie: string, but?: ButCode) {
     const telephone = normaliserTelephone(saisie);
+    // Pas de SMS inutile : on oriente tout de suite vers l'inscription ou la connexion.
+    if (but) {
+      const compte = await this.prisma.user.findUnique({
+        where: { telephone },
+        select: { statut: true },
+      });
+      if (but === 'connexion' && !compte)
+        throw new NotFoundException(
+          "Ce numéro n'a pas encore de compte GDC. Inscrivez-vous pour continuer.",
+        );
+      if (but === 'inscription' && compte)
+        throw new ConflictException(
+          'Ce numéro a déjà un compte GDC. Connectez-vous.',
+        );
+      if (compte?.statut === 'SUSPENDU')
+        throw new ForbiddenException(
+          'Ce compte est suspendu. Contactez le support.',
+        );
+    }
     const recents = await this.prisma.codeOtp.count({
       where: {
         telephone,

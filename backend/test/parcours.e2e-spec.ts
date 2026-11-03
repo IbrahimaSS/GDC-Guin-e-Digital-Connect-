@@ -73,6 +73,16 @@ describe('Parcours d’une mission', () => {
     Authorization: `Bearer ${s.acces}`,
   });
 
+  it('n’envoie pas de code de connexion à un numéro sans compte', async () => {
+    const envoyes = sms.historique.length;
+    const res = await api()
+      .post('/api/auth/otp/demander')
+      .send({ telephone: CLIENT, but: 'connexion' })
+      .expect(404);
+    expect(res.body.message).toMatch(/Inscrivez-vous/);
+    expect(sms.historique.length).toBe(envoyes);
+  });
+
   it('refuse un code incorrect puis inscrit un nouveau client', async () => {
     await api()
       .post('/api/auth/otp/demander')
@@ -104,6 +114,11 @@ describe('Parcours d’une mission', () => {
   });
 
   it('protège les routes et fait tourner le jeton de rafraîchissement', async () => {
+    // Inscription avec un numéro déjà inscrit : aucun code, renvoi vers la connexion.
+    await api()
+      .post('/api/auth/otp/demander')
+      .send({ telephone: CLIENT, but: 'inscription' })
+      .expect(409);
     await api().get('/api/moi').expect(401);
     await api().get('/api/admin/statistiques').set(bearer(client)).expect(403);
 
