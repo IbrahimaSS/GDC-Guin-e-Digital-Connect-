@@ -3,32 +3,104 @@
 import { Building2, ClipboardList, User } from "lucide-react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useState, type FormEvent } from "react";
+import { useRef, useState, type FormEvent } from "react";
+import EtapeCode from "@/components/auth/EtapeCode";
+import { useVerificationNumero } from "@/components/auth/useVerificationNumero";
 import Reveal from "@/components/motion/Reveal";
 import { toast } from "@/components/motion/Toaster";
 import { Button, cn, Field, Input, Select } from "@/components/ui";
+import { apiActive, texteErreur } from "@/lib/api";
+import { idZone, inscrire, useZonesApi } from "@/lib/auth";
 import { ZONES } from "@/lib/data";
-import { cheminRetour } from "@/lib/redirect";
+import { cheminRetour, retourDemande } from "@/lib/redirect";
+import { ESPACE_ROLE, formaterNumero, useNumeroVerifie } from "@/lib/session";
+
+interface Saisie {
+  nom: string;
+  prenom: string;
+  zone: string;
+  email: string;
+  entreprise: string;
+}
 
 export default function InscriptionClientForm() {
   const router = useRouter();
   const redirect = cheminRetour(useSearchParams().get("redirect"));
   const [type, setType] = useState<"particulier" | "entreprise">("particulier");
+  // Numéro déjà vérifié sur la page de connexion : prérempli tant que l'utilisateur ne le modifie pas.
+  const verifie = useNumeroVerifie();
+  const [telephoneSaisi, setTelephone] = useState<string | null>(null);
+  const telephone = telephoneSaisi ?? (verifie ? formaterNumero(verifie.telephone) : "");
+  // État pour réafficher le formulaire, référence pour la création du compte (lue juste après le clic).
+  const [saisie, setSaisie] = useState<Saisie | null>(null);
+  const derniereSaisie = useRef<Saisie | null>(null);
   const [envoi, setEnvoi] = useState(false);
+  const [erreur, setErreur] = useState("");
+  const zones = useZonesApi(apiActive);
 
-  function soumettre(e: FormEvent) {
-    e.preventDefault();
-    setEnvoi(true);
-    // Simulation de l'appel API.
-    setTimeout(() => {
-      toast("Compte créé ! Bienvenue sur GDC 🎉");
+  const verification = useVerificationNumero({
+    async creerCompte(jetonInscription) {
+      const s = derniereSaisie.current!;
+      const res = await inscrire({
+        jetonInscription,
+        nom: s.nom,
+        prenom: s.prenom,
+        role: "CLIENT",
+        zoneId: idZone(zones, s.zone),
+        email: s.email || undefined,
+        typeClient: type === "entreprise" ? "ENTREPRISE" : "PARTICULIER",
+        entreprise: type === "entreprise" ? s.entreprise : undefined,
+      });
+      toast(`Compte créé. Bienvenue sur GDC, ${res.utilisateur.prenom} !`);
       router.push(redirect ?? "/client");
-    }, 900);
+    },
+    compteExistant(utilisateur) {
+      toast(`Ce numéro avait déjà un compte : vous êtes connecté, ${utilisateur.prenom}.`, "info");
+      router.push(redirect ?? ESPACE_ROLE[utilisateur.role]);
+    },
+  });
+
+  async function soumettre(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    if (!apiActive) {
+      // Démonstration : création simulée.
+      setEnvoi(true);
+      setTimeout(() => {
+        toast("Compte créé ! Bienvenue sur GDC");
+        router.push(redirect ?? "/client");
+      }, 900);
+      return;
+    }
+    const f = new FormData(e.currentTarget);
+    const texte = (cle: string) => String(f.get(cle) ?? "").trim();
+    derniereSaisie.current = { nom: texte("nom"), prenom: texte("prenom"), zone: texte("zone"), email: texte("email"), entreprise: texte("entreprise") };
+    setSaisie(derniereSaisie.current);
+    setErreur("");
+    setEnvoi(true);
+    try {
+      await verification.demarrer(telephone);
+    } catch (err) {
+      setErreur(texteErreur(err));
+    } finally {
+      setEnvoi(false);
+    }
+  }
+
+  if (verification.telephone) {
+    return (
+      <EtapeCode
+        titre="Vérifiez votre numéro"
+        telephone={telephone}
+        onValider={verification.valider}
+        onRenvoyer={verification.renvoyer}
+        onRetour={verification.annuler}
+      />
+    );
   }
 
   return (
     <Reveal stagger={0.08}>
-      {redirect && (
+      {retourDemande(redirect) && (
         <div className="mb-6 flex items-start gap-3 rounded-2xl bg-accent-50 p-4 text-sm text-accent-700 ring-1 ring-accent-100">
           <ClipboardList className="mt-0.5 size-5 shrink-0" />
           <p>
@@ -66,16 +138,25 @@ export default function InscriptionClientForm() {
 
         <div className="grid gap-4 sm:grid-cols-2">
           <Field label="Nom *">
-            <Input required autoComplete="family-name" placeholder="Camara" />
+            <Input name="nom" required autoComplete="family-name" placeholder="Camara" defaultValue={saisie?.nom} />
           </Field>
           <Field label="Prénom *">
-            <Input required autoComplete="given-name" placeholder="Mohamed" />
+            <Input name="prenom" required autoComplete="given-name" placeholder="Mohamed" defaultValue={saisie?.prenom} />
           </Field>
           <Field label="Téléphone *" hint="Un code de vérification vous sera envoyé.">
-            <Input required type="tel" autoComplete="tel-national" placeholder="620 12 34 56" />
+            <Input
+              required
+              type="tel"
+              autoComplete="tel-national"
+              placeholder="620 12 34 56"
+              pattern="\s*(\+?224)?[\s.]*6(\s*\d){8}\s*"
+              title="Numéro mobile guinéen à 9 chiffres, ex. 620 12 34 56"
+              value={telephone}
+              onChange={(e) => setTelephone(e.target.value)}
+            />
           </Field>
           <Field label="Quartier / Zone *">
-            <Select required defaultValue="">
+            <Select name="zone" required defaultValue={saisie?.zone ?? ""}>
               <option value="" disabled>
                 Choisir une zone
               </option>
@@ -87,7 +168,7 @@ export default function InscriptionClientForm() {
           {type === "entreprise" && (
             <>
               <Field label="Nom de l'entreprise *">
-                <Input required autoComplete="organization" placeholder="Kaloum Services SARL" />
+                <Input name="entreprise" required autoComplete="organization" placeholder="Kaloum Services SARL" defaultValue={saisie?.entreprise} />
               </Field>
               <Field label="Secteur d'activité">
                 <Select defaultValue="">
@@ -102,7 +183,7 @@ export default function InscriptionClientForm() {
             </>
           )}
           <Field label="E-mail (optionnel)" className="sm:col-span-2">
-            <Input type="email" autoComplete="email" placeholder="nom@exemple.gn" />
+            <Input name="email" type="email" autoComplete="email" placeholder="nom@exemple.gn" defaultValue={saisie?.email} />
           </Field>
         </div>
 
@@ -111,6 +192,7 @@ export default function InscriptionClientForm() {
           J&apos;accepte les conditions d&apos;utilisation et la politique de protection des données de GDC.
         </label>
 
+        {erreur && <p className="text-sm font-medium text-red-600">{erreur}</p>}
         <Button type="submit" size="lg" className="w-full" disabled={envoi}>
           {envoi ? (
             <>

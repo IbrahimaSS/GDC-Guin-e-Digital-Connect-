@@ -4,10 +4,15 @@ import { ArrowLeft, ArrowRight, Check, FileUp, IdCard, ImagePlus, GraduationCap 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useRef, useState, type FormEvent } from "react";
+import EtapeCode from "@/components/auth/EtapeCode";
+import { useVerificationNumero } from "@/components/auth/useVerificationNumero";
 import { enter, gsap, prefersReducedMotion, useGSAP } from "@/components/motion/gsap";
 import { toast } from "@/components/motion/Toaster";
 import { Button, cn, Field, Input, MetierIcon, Select, Textarea } from "@/components/ui";
+import { apiActive, texteErreur } from "@/lib/api";
+import { idZone, inscrire, useZonesApi } from "@/lib/auth";
 import { METIERS, ZONES, type MetierId } from "@/lib/data";
+import { ESPACE_ROLE, formaterNumero, useNumeroVerifie } from "@/lib/session";
 
 const ETAPES = ["Identité", "Métier", "Documents"];
 const SPECIALITES = ["Installation", "Dépannage", "Maintenance", "Rénovation", "Conseil", "Urgences"];
@@ -42,6 +47,40 @@ export default function InscriptionTechnicienForm() {
   const [metier, setMetier] = useState<MetierId>("electricite");
   const [specialites, setSpecialites] = useState<string[]>(["Installation"]);
   const [zones, setZones] = useState<string[]>(["Kaloum"]);
+  // Les étapes se remplacent à l'écran : les valeurs saisies sont gardées ici.
+  const [infos, setInfos] = useState({ nom: "", prenom: "", zone: "Kaloum", entreprise: "", experience: 3, bio: "" });
+  // Numéro déjà vérifié sur la page de connexion : prérempli tant que l'utilisateur ne le modifie pas.
+  const verifie = useNumeroVerifie();
+  const [telephoneSaisi, setTelephone] = useState<string | null>(null);
+  const telephone = telephoneSaisi ?? (verifie ? formaterNumero(verifie.telephone) : "");
+  const [envoi, setEnvoi] = useState(false);
+  const [erreur, setErreur] = useState("");
+  const zonesApi = useZonesApi(apiActive);
+  const champ = (cle: keyof typeof infos) => ({
+    value: infos[cle],
+    onChange: (e: { target: { value: string } }) => setInfos((i) => ({ ...i, [cle]: cle === "experience" ? Number(e.target.value) : e.target.value })),
+  });
+
+  const verification = useVerificationNumero({
+    async creerCompte(jetonInscription) {
+      const ids = (noms: string[]) => noms.map((z) => idZone(zonesApi, z)).filter((id): id is string => Boolean(id));
+      await inscrire({
+        jetonInscription,
+        nom: infos.nom.trim(),
+        prenom: infos.prenom.trim(),
+        role: "TECHNICIEN",
+        zoneId: idZone(zonesApi, infos.zone),
+        entreprise: infos.entreprise.trim() || undefined,
+        technicien: { metierId: metier, specialites, experience: infos.experience, zones: ids(zones), bio: infos.bio.trim() || undefined },
+      });
+      toast("Profil créé ! Envoyez vos pièces depuis « Vérification » pour être visible des clients.");
+      router.push("/technicien");
+    },
+    compteExistant(utilisateur) {
+      toast(`Ce numéro avait déjà un compte : vous êtes connecté, ${utilisateur.prenom}.`, "info");
+      router.push(ESPACE_ROLE[utilisateur.role]);
+    },
+  });
 
   useGSAP(
     () => {
@@ -60,11 +99,37 @@ export default function InscriptionTechnicienForm() {
 
   const toggle = (list: string[], set: (v: string[]) => void, v: string) => set(list.includes(v) ? list.filter((x) => x !== v) : [...list, v]);
 
-  function suivant(e: FormEvent) {
+  async function suivant(e: FormEvent) {
     e.preventDefault();
     if (etape < ETAPES.length - 1) return aller(etape + 1);
-    toast("Profil créé ! Votre dossier de vérification niveau 1 est en cours.");
-    router.push("/technicien");
+    if (!apiActive) {
+      toast("Profil créé ! Votre dossier de vérification niveau 1 est en cours.");
+      return router.push("/technicien");
+    }
+    setErreur("");
+    setEnvoi(true);
+    try {
+      await verification.demarrer(telephone);
+    } catch (err) {
+      setErreur(texteErreur(err));
+    } finally {
+      setEnvoi(false);
+    }
+  }
+
+  if (verification.telephone) {
+    return (
+      <EtapeCode
+        titre="Vérifiez votre numéro"
+        telephone={telephone}
+        onValider={verification.valider}
+        onRenvoyer={verification.renvoyer}
+        onRetour={() => {
+          verification.annuler();
+          aller(0);
+        }}
+      />
+    );
   }
 
   return (
@@ -100,16 +165,25 @@ export default function InscriptionTechnicienForm() {
             <>
               <div className="grid gap-4 sm:grid-cols-2">
                 <Field label="Nom *">
-                  <Input required placeholder="Diallo" autoComplete="family-name" />
+                  <Input required placeholder="Diallo" autoComplete="family-name" {...champ("nom")} />
                 </Field>
                 <Field label="Prénom *">
-                  <Input required placeholder="Mamadou" autoComplete="given-name" />
+                  <Input required placeholder="Mamadou" autoComplete="given-name" {...champ("prenom")} />
                 </Field>
-                <Field label="Téléphone *">
-                  <Input required type="tel" placeholder="620 12 34 56" autoComplete="tel-national" />
+                <Field label="Téléphone *" hint="Un code de vérification vous sera envoyé.">
+                  <Input
+                    required
+                    type="tel"
+                    placeholder="620 12 34 56"
+                    autoComplete="tel-national"
+                    pattern="\s*(\+?224)?[\s.]*6(\s*\d){8}\s*"
+                    title="Numéro mobile guinéen à 9 chiffres, ex. 620 12 34 56"
+                    value={telephone}
+                    onChange={(e) => setTelephone(e.target.value)}
+                  />
                 </Field>
                 <Field label="Zone principale *">
-                  <Select required defaultValue="Kaloum">
+                  <Select required {...champ("zone")}>
                     {ZONES.map((z) => (
                       <option key={z}>{z}</option>
                     ))}
@@ -117,7 +191,7 @@ export default function InscriptionTechnicienForm() {
                 </Field>
               </div>
               <Field label="Entreprise (optionnel)">
-                <Input placeholder="Nom de votre atelier ou entreprise" />
+                <Input placeholder="Nom de votre atelier ou entreprise" {...champ("entreprise")} />
               </Field>
             </>
           )}
@@ -163,7 +237,7 @@ export default function InscriptionTechnicienForm() {
               </div>
               <div className="grid gap-4 sm:grid-cols-2">
                 <Field label="Années d'expérience *">
-                  <Input required type="number" min={0} max={60} defaultValue={3} />
+                  <Input required type="number" min={0} max={60} {...champ("experience")} />
                 </Field>
                 <Field label="Disponibilité">
                   <Select defaultValue="semaine">
@@ -192,7 +266,7 @@ export default function InscriptionTechnicienForm() {
                 </div>
               </div>
               <Field label="Description">
-                <Textarea placeholder="Présentez votre expérience, vos points forts…" />
+                <Textarea placeholder="Présentez votre expérience, vos points forts…" maxLength={1000} {...champ("bio")} />
               </Field>
             </>
           )}
@@ -212,14 +286,19 @@ export default function InscriptionTechnicienForm() {
           )}
         </div>
 
+        {erreur && <p className="mt-6 text-sm font-medium text-red-600">{erreur}</p>}
         <div className="mt-8 flex gap-3">
           {etape > 0 && (
             <Button variant="ghost" size="lg" onClick={() => aller(etape - 1)}>
               <ArrowLeft className="size-4" /> Retour
             </Button>
           )}
-          <Button type="submit" size="lg" className="flex-1">
-            {etape < ETAPES.length - 1 ? (
+          <Button type="submit" size="lg" className="flex-1" disabled={envoi}>
+            {envoi ? (
+              <>
+                <span className="size-4 animate-spin rounded-full border-2 border-white/40 border-t-white" /> Envoi du code…
+              </>
+            ) : etape < ETAPES.length - 1 ? (
               <>
                 Suivant <ArrowRight className="size-4" />
               </>
