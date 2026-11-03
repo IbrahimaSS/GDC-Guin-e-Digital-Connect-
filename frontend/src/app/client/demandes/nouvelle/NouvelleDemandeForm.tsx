@@ -11,6 +11,12 @@ import { Toggle } from "@/components/ui/interactive";
 import AdressePicker from "@/components/map/AdressePicker";
 import { CLIENT_CONNECTE, formatGNF, getMetier, getTechnicien, METIERS, ZONES, type MetierId } from "@/lib/data";
 import type { Point } from "@/lib/geo";
+import { apiActive, texteErreur } from "@/lib/api";
+import { idZone, useZonesApi } from "@/lib/auth";
+import { creerDemande } from "@/lib/demandes";
+import { useSession } from "@/lib/session";
+
+export const CRENEAUX = { matin: "Matin (8h – 12h)", aprem: "Après-midi (12h – 17h)", soir: "Soir (17h – 20h)", flex: "Flexible" };
 
 export default function NouvelleDemandeForm() {
   const params = useSearchParams();
@@ -20,14 +26,19 @@ export default function NouvelleDemandeForm() {
   const [metier, setMetier] = useState<MetierId>(tech?.metier ?? "electricite");
   const [titre, setTitre] = useState("");
   const [description, setDescription] = useState("");
-  const [zone, setZone] = useState("Kaloum");
-  const [adresse, setAdresse] = useState(CLIENT_CONNECTE.adresse);
+  const session = useSession();
+  const [zone, setZone] = useState(apiActive ? (session?.utilisateur.zone?.nom ?? "Kaloum") : "Kaloum");
+  const [adresse, setAdresse] = useState(apiActive ? "" : CLIENT_CONNECTE.adresse);
   const [point, setPoint] = useState<Point | null>(null);
   const [date, setDate] = useState("");
+  const [creneau, setCreneau] = useState<keyof typeof CRENEAUX>("matin");
   const [urgent, setUrgent] = useState(false);
   const [budget, setBudget] = useState("");
   const [photos, setPhotos] = useState<string[]>([]);
   const [envoyee, setEnvoyee] = useState(false);
+  const [envoi, setEnvoi] = useState(false);
+  const [erreur, setErreur] = useState("");
+  const zones = useZonesApi(apiActive);
 
   useGSAP(
     () => {
@@ -53,8 +64,35 @@ export default function NouvelleDemandeForm() {
     { dependencies: [envoyee], scope: root },
   );
 
-  function envoyer(e: FormEvent) {
+  async function envoyer(e: FormEvent) {
     e.preventDefault();
+    if (apiActive) {
+      const zoneId = idZone(zones, zone);
+      if (!zoneId) return setErreur(`La zone ${zone} n'est pas encore desservie par GDC.`);
+      if (adresse.trim().length < 3) return setErreur("Indiquez l'adresse de l'intervention (quartier, rue, repère).");
+      setErreur("");
+      setEnvoi(true);
+      try {
+        await creerDemande({
+          metierId: metier,
+          titre: titre.trim(),
+          description: description.trim(),
+          zoneId,
+          adresse: adresse.trim(),
+          lat: point?.lat,
+          lng: point?.lng,
+          urgente: urgent,
+          dateSouhaitee: date || undefined,
+          creneau: CRENEAUX[creneau],
+          budget: budget ? Number(budget) : undefined,
+          technicienId: params.get("technicien") ?? undefined,
+        });
+      } catch (err) {
+        return setErreur(texteErreur(err));
+      } finally {
+        setEnvoi(false);
+      }
+    }
     setEnvoyee(true);
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
@@ -122,6 +160,7 @@ export default function NouvelleDemandeForm() {
               <Field label="Description du besoin *" hint={`${description.length}/500 caractères`}>
                 <Textarea
                   required
+                  minLength={10}
                   maxLength={500}
                   value={description}
                   onChange={(e) => setDescription(e.target.value)}
@@ -171,11 +210,12 @@ export default function NouvelleDemandeForm() {
                 <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
               </Field>
               <Field label="Créneau">
-                <Select defaultValue="matin">
-                  <option value="matin">Matin (8h – 12h)</option>
-                  <option value="aprem">Après-midi (12h – 17h)</option>
-                  <option value="soir">Soir (17h – 20h)</option>
-                  <option value="flex">Flexible</option>
+                <Select value={creneau} onChange={(e) => setCreneau(e.target.value as keyof typeof CRENEAUX)}>
+                  {Object.entries(CRENEAUX).map(([id, label]) => (
+                    <option key={id} value={id}>
+                      {label}
+                    </option>
+                  ))}
                 </Select>
               </Field>
             </div>
@@ -241,8 +281,9 @@ export default function NouvelleDemandeForm() {
               )}
             </ul>
             <p className="mt-4 line-clamp-3 min-h-10 rounded-xl bg-slate-50 p-3 text-xs text-slate-500">{titre || description || "Votre description apparaîtra ici."}</p>
-            <Button type="submit" size="lg" className="mt-5 w-full">
-              <Send className="size-4" /> Envoyer la demande
+            {erreur && <p className="mt-4 text-sm font-medium text-red-600">{erreur}</p>}
+            <Button type="submit" size="lg" className="mt-5 w-full" disabled={envoi}>
+              <Send className="size-4" /> {envoi ? "Envoi…" : "Envoyer la demande"}
             </Button>
             <p className="mt-3 flex items-start gap-2 text-xs text-slate-500">
               <CheckCircle2 className="size-4 shrink-0 text-emerald-500" /> Gratuit et sans engagement. Seuls des professionnels vérifiés reçoivent votre demande.

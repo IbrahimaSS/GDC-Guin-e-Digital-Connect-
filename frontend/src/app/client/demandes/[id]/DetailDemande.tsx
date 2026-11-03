@@ -13,12 +13,38 @@ import DevisClient from "@/components/shared/DevisClient";
 import { useStatutDemande } from "@/lib/stockage";
 import { Avatar, Button, Card, LinkButton, MetierIcon, Rating, VerificationBadge } from "@/components/ui";
 import { Modal } from "@/components/ui/interactive";
-import { formatGNF, getMetier, getTechnicien, type Demande, type StatutDemande } from "@/lib/data";
+import { apiActive, texteErreur } from "@/lib/api";
+import { formatGNF, getMetier, type Demande, type StatutDemande } from "@/lib/data";
+import { annulerDemande, technicienDe } from "@/lib/demandes";
 
-export default function DetailDemande({ demande }: { demande: Demande }) {
-  const tech = demande.technicienId ? getTechnicien(demande.technicienId) : undefined;
+/** `onChange` : recharger la demande après une action (avec l'API). */
+export default function DetailDemande({ demande, onChange }: { demande: Demande; onChange?: () => void }) {
+  const tech = technicienDe(demande);
   const [annulation, setAnnulation] = useState(false);
-  const [statut, setStatut] = useStatutDemande<StatutDemande>(demande.id, demande.statut);
+  const [envoi, setEnvoi] = useState(false);
+  // En démonstration, le statut vit dans le navigateur ; avec l'API, il vient du serveur.
+  const [statutLocal, setStatutLocal] = useStatutDemande<StatutDemande>(demande.id, demande.statut);
+  const statut = apiActive ? demande.statut : statutLocal;
+  const telTech = tech?.telephone.replace(/\D/g, "");
+
+  async function annuler() {
+    if (!apiActive) {
+      setStatutLocal("annulee");
+      setAnnulation(false);
+      return toast("Demande annulée", "info");
+    }
+    setEnvoi(true);
+    try {
+      await annulerDemande(demande.id);
+      toast("Demande annulée", "info");
+      onChange?.();
+    } catch (e) {
+      toast(texteErreur(e), "error");
+    } finally {
+      setEnvoi(false);
+      setAnnulation(false);
+    }
+  }
 
   const infos = [
     { icon: CalendarDays, label: "Créneau", valeur: demande.creneau },
@@ -59,7 +85,9 @@ export default function DetailDemande({ demande }: { demande: Demande }) {
       <div className="grid gap-6 xl:grid-cols-[1.5fr_1fr]">
         <Reveal className="space-y-6">
           {tech && statut !== "annulee" && statut !== "envoyee" && <SuiviTrajet tech={tech} destination={demande.zone} statut={statut} />}
-          {tech && <CodeIntervention demandeId={demande.id} statut={statut} technicien={tech.nom.split(" ")[0]} />}
+          {tech && (
+            <CodeIntervention demandeId={demande.id} statut={statut} technicien={tech.nom.split(" ")[0]} code={demande.api?.code} qr={demande.api?.qr} />
+          )}
           {tech && statut !== "annulee" && statut !== "envoyee" && <DevisClient demande={demande} technicien={tech.nom} />}
           <Card className="p-6">
             <h2 className="font-bold text-slate-900">Détails de la demande</h2>
@@ -103,12 +131,22 @@ export default function DetailDemande({ demande }: { demande: Demande }) {
                   </div>
                 </div>
                 <div className="flex gap-2">
-                  <a href={`tel:${tech.telephone.replace(/\s/g, "")}`} className="rounded-xl bg-brand-50 p-3 text-brand-600 transition hover:bg-brand-600 hover:text-white" aria-label="Appeler">
-                    <Phone className="size-5" />
-                  </a>
-                  <a href="#" className="rounded-xl bg-emerald-50 p-3 text-emerald-600 transition hover:bg-emerald-500 hover:text-white" aria-label="WhatsApp">
-                    <MessageCircle className="size-5" />
-                  </a>
+                  {telTech && (
+                    <>
+                      <a href={`tel:+${telTech}`} className="rounded-xl bg-brand-50 p-3 text-brand-600 transition hover:bg-brand-600 hover:text-white" aria-label="Appeler">
+                        <Phone className="size-5" />
+                      </a>
+                      <a
+                        href={`https://wa.me/${telTech}`}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="rounded-xl bg-emerald-50 p-3 text-emerald-600 transition hover:bg-emerald-500 hover:text-white"
+                        aria-label="WhatsApp"
+                      >
+                        <MessageCircle className="size-5" />
+                      </a>
+                    </>
+                  )}
                   <LinkButton href={`/client/messages?c=${demande.id}`} variant="outline" aria-label="Messages">
                     <MessageSquareText className="size-4" /> Message
                   </LinkButton>
@@ -123,7 +161,7 @@ export default function DetailDemande({ demande }: { demande: Demande }) {
               </span>
               <div>
                 <p className="font-bold text-slate-900">En recherche d&apos;un technicien</p>
-                <p className="text-sm text-slate-500">3 professionnels de votre zone ont consulté votre demande.</p>
+                <p className="text-sm text-slate-500">Les professionnels vérifiés de votre zone ont été prévenus. Vous recevrez un SMS dès que l&apos;un d&apos;eux accepte.</p>
               </div>
             </Card>
           )}
@@ -146,15 +184,8 @@ export default function DetailDemande({ demande }: { demande: Demande }) {
             <Button variant="ghost" onClick={() => setAnnulation(false)}>
               Garder la demande
             </Button>
-            <Button
-              variant="danger"
-              onClick={() => {
-                setStatut("annulee");
-                setAnnulation(false);
-                toast("Demande annulée", "info");
-              }}
-            >
-              Oui, annuler
+            <Button variant="danger" onClick={annuler} disabled={envoi}>
+              {envoi ? "Annulation…" : "Oui, annuler"}
             </Button>
           </>
         }

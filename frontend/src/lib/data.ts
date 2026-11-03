@@ -392,6 +392,14 @@ export interface Demande {
   budget?: number;
   evaluee?: boolean;
   chronologie: EtapeChronologie[];
+  /** Données propres à l'API (absentes en démonstration) : voir src/lib/demandes.ts. */
+  api?: {
+    /** Technicien retenu, tel que l'API le décrit (il n'existe pas forcément dans TECHNICIENS). */
+    technicien?: { id: string; nom: string; photoUrl: string | null; note: number; nbAvis: number; niveau: number; experience: number; telephone?: string };
+    /** Code d'intervention et contenu du QR code : remis au client seulement, une fois la demande acceptée. */
+    code?: string;
+    qr?: string;
+  };
 }
 
 function chrono(statut: StatutDemande, dates: string[]): EtapeChronologie[] {

@@ -1,12 +1,13 @@
 import { CalendarDays, ChevronRight, MapPin, Zap } from "lucide-react";
 import Link from "next/link";
 import { Avatar, MetierIcon } from "@/components/ui";
-import { getTechnicien, type Demande } from "@/lib/data";
+import type { Demande } from "@/lib/data";
+import { technicienDe } from "@/lib/demandes";
 import { StatutDemandeBadge } from "./status";
 
 /** Ligne de demande cliquable, utilisée côté client et côté technicien. */
 export default function DemandeRow({ demande, href, vue = "client" }: { demande: Demande; href: string; vue?: "client" | "technicien" }) {
-  const tech = demande.technicienId ? getTechnicien(demande.technicienId) : undefined;
+  const tech = technicienDe(demande);
   return (
     <Link
       href={href}

@@ -6,16 +6,19 @@ import Reveal from "@/components/motion/Reveal";
 import DemandeRow from "@/components/shared/DemandeRow";
 import { Card, EmptyState, LinkButton, PageHeader } from "@/components/ui";
 import { Tabs } from "@/components/ui/interactive";
-import { DEMANDES, type StatutDemande } from "@/lib/data";
+import ChargementListe from "@/components/shared/ChargementListe";
+import type { StatutDemande } from "@/lib/data";
+import { useMesDemandes } from "@/lib/demandes";
 
 type Filtre = "toutes" | StatutDemande;
 
 export default function MesDemandes() {
   const [filtre, setFiltre] = useState<Filtre>("toutes");
   const [q, setQ] = useState("");
+  const { demandes, chargement, erreur } = useMesDemandes();
 
-  const count = (s: StatutDemande) => DEMANDES.filter((d) => d.statut === s).length;
-  const liste = DEMANDES.filter((d) => (filtre === "toutes" || d.statut === filtre) && d.titre.toLowerCase().includes(q.toLowerCase()));
+  const count = (s: StatutDemande) => demandes.filter((d) => d.statut === s).length;
+  const liste = demandes.filter((d) => (filtre === "toutes" || d.statut === filtre) && d.titre.toLowerCase().includes(q.toLowerCase()));
 
   return (
     <>
@@ -34,7 +37,7 @@ export default function MesDemandes() {
             value={filtre}
             onChange={setFiltre}
             tabs={[
-              { id: "toutes", label: "Toutes", count: DEMANDES.length },
+              { id: "toutes", label: "Toutes", count: demandes.length },
               { id: "envoyee", label: "En attente", count: count("envoyee") },
               { id: "acceptee", label: "Acceptées", count: count("acceptee") },
               { id: "en_cours", label: "En cours", count: count("en_cours") },
@@ -53,8 +56,16 @@ export default function MesDemandes() {
           </label>
         </div>
         <div className="mt-5">
-          {liste.length === 0 ? (
-            <EmptyState icon={ClipboardList} title="Aucune demande" text="Aucune demande ne correspond à ce filtre." />
+          {chargement ? (
+            <ChargementListe />
+          ) : erreur ? (
+            <EmptyState icon={ClipboardList} title="Chargement impossible" text={erreur} />
+          ) : liste.length === 0 ? (
+            <EmptyState
+              icon={ClipboardList}
+              title="Aucune demande"
+              text={demandes.length ? "Aucune demande ne correspond à ce filtre." : "Vous n'avez encore publié aucune demande. Décrivez votre besoin : les professionnels de votre zone vous répondent."}
+            />
           ) : (
             <Reveal className="space-y-2" deps={[filtre, q]} y={14} stagger={0.05}>
               {liste.map((d) => (
