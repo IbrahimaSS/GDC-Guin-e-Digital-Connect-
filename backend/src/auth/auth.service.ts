@@ -82,7 +82,11 @@ export class AuthService {
       numero: telephone,
       texte: `GDC : votre code de connexion est ${code}. Valable ${ttl} minutes. Ne le communiquez à personne.`,
     });
-    return { expireDansSecondes: ttl * 60 };
+    // En développement, aucun SMS ne part (pilote console) : le code est renvoyé pour pouvoir tester.
+    const exposer =
+      this.config.get('smsDriver') === 'console' &&
+      process.env.NODE_ENV !== 'production';
+    return { expireDansSecondes: ttl * 60, ...(exposer && { codeDev: code }) };
   }
 
   /**
