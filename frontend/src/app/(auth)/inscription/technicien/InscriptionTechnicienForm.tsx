@@ -2,18 +2,39 @@
 
 import { ArrowLeft, ArrowRight, Check, FileUp, IdCard, ImagePlus, GraduationCap } from "lucide-react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useRef, useState, type FormEvent } from "react";
+import DejaInscrit, { numeroPrerempli } from "@/components/auth/DejaInscrit";
+import EtapeCode from "@/components/auth/EtapeCode";
+import { useVerificationNumero } from "@/components/auth/useVerificationNumero";
 import { enter, gsap, prefersReducedMotion, useGSAP } from "@/components/motion/gsap";
 import { toast } from "@/components/motion/Toaster";
 import { Button, cn, Field, Input, MetierIcon, Select, Textarea } from "@/components/ui";
-import { METIERS, ZONES, type MetierId } from "@/lib/data";
+import { api, apiActive, texteErreur } from "@/lib/api";
+import { dejaInscrit, idZone, inscrire, useZonesApi } from "@/lib/auth";
+import { getMetier, ZONES, type MetierId } from "@/lib/data";
+import { useMetiers } from "@/lib/plateforme";
+import { ACCEPTE, televerser, verifierFichier, type TypeFichier } from "@/lib/fichiers";
+import { ESPACE_ROLE, mettreAJourUtilisateur, useNumeroVerifie, type UtilisateurApi } from "@/lib/session";
 
 const ETAPES = ["Identité", "Métier", "Documents"];
 const SPECIALITES = ["Installation", "Dépannage", "Maintenance", "Rénovation", "Conseil", "Urgences"];
 
-function DropZone({ icon: Icon, titre, texte }: { icon: typeof IdCard; titre: string; texte: string }) {
-  const [fichier, setFichier] = useState<string | null>(null);
+type Documents = Record<"identite" | "diplomes" | "realisations" | "photo", File[]>;
+
+interface PropsDropZone {
+  icon: typeof IdCard;
+  titre: string;
+  texte: string;
+  fichiers: File[];
+  onChange: (f: File[]) => void;
+  type: TypeFichier;
+  /** Nombre maximum de fichiers (1 par défaut) */
+  max?: number;
+}
+
+function DropZone({ icon: Icon, titre, texte, fichiers, onChange, type, max = 1 }: PropsDropZone) {
+  const fichier = fichiers.length ? (fichiers.length > 1 ? `${fichiers.length} fichiers` : fichiers[0].name) : null;
   return (
     <label
       className={cn(
@@ -29,12 +50,45 @@ function DropZone({ icon: Icon, titre, texte }: { icon: typeof IdCard; titre: st
         <span className="block truncate text-xs text-slate-500">{fichier ?? texte}</span>
       </span>
       <span className="text-xs font-semibold text-brand-600">{fichier ? "Changer" : "Ajouter"}</span>
-      <input type="file" className="sr-only" accept="image/*,.pdf" onChange={(e) => setFichier(e.target.files?.[0]?.name ?? null)} />
+      <input
+        type="file"
+        className="sr-only"
+        accept={ACCEPTE[type]}
+        multiple={max > 1}
+        onChange={(e) => {
+          const choisis = Array.from(e.target.files ?? []).slice(0, max);
+          e.target.value = "";
+          const probleme = choisis.map((f) => verifierFichier(f, type)).find(Boolean);
+          if (probleme) return toast(probleme, "error");
+          onChange(choisis);
+        }}
+      />
     </label>
   );
 }
 
+/**
+ * Après la création du compte : pièces privées et demande de vérification niveau 1,
+ * puis photo de profil et réalisations (publiques).
+ */
+async function envoyerDocuments(d: Documents, metier: string) {
+  const pieces = [
+    ...(await Promise.all(d.identite.map(async (f) => ({ type: "piece_identite", url: await televerser(f, "piece") })))),
+    ...(await Promise.all(d.diplomes.map(async (f) => ({ type: "diplome", url: await televerser(f, "piece") })))),
+  ];
+  if (pieces.length) await api("/verifications", { methode: "POST", corps: { niveau: 1, pieces, message: "Dossier envoyé à l'inscription." } });
+  if (d.photo[0]) {
+    const photoUrl = await televerser(d.photo[0], "photo");
+    mettreAJourUtilisateur(await api<UtilisateurApi>("/moi", { methode: "PATCH", corps: { photoUrl } }));
+  }
+  for (const [i, f] of d.realisations.entries()) {
+    const imageUrl = await televerser(f, "photo");
+    await api("/techniciens/moi/realisations", { methode: "POST", corps: { titre: `Réalisation ${i + 1}`, categorie: metier, imageUrl } });
+  }
+}
+
 export default function InscriptionTechnicienForm() {
+  const metiers = useMetiers();
   const router = useRouter();
   const ref = useRef<HTMLDivElement>(null);
   const [etape, setEtape] = useState(0);
@@ -42,6 +96,50 @@ export default function InscriptionTechnicienForm() {
   const [metier, setMetier] = useState<MetierId>("electricite");
   const [specialites, setSpecialites] = useState<string[]>(["Installation"]);
   const [zones, setZones] = useState<string[]>(["Kaloum"]);
+  // Les étapes se remplacent à l'écran : les valeurs saisies sont gardées ici.
+  const [infos, setInfos] = useState({ nom: "", prenom: "", zone: "Kaloum", entreprise: "", experience: 3, bio: "" });
+  // Numéro déjà vérifié sur la page de connexion : prérempli tant que l'utilisateur ne le modifie pas.
+  const verifie = useNumeroVerifie();
+  const [telephoneSaisi, setTelephone] = useState<string | null>(null);
+  const telephoneConnexion = useSearchParams().get("telephone");
+  const telephone = telephoneSaisi ?? numeroPrerempli(verifie?.telephone ?? telephoneConnexion);
+  const [dejaCompte, setDejaCompte] = useState(false);
+  const [envoi, setEnvoi] = useState(false);
+  const [erreur, setErreur] = useState("");
+  // Documents choisis : envoyés une fois le compte créé (l'envoi exige d'être connecté).
+  const [documents, setDocuments] = useState<Documents>({ identite: [], diplomes: [], realisations: [], photo: [] });
+  const zonesApi = useZonesApi(apiActive);
+  const champ = (cle: keyof typeof infos) => ({
+    value: infos[cle],
+    onChange: (e: { target: { value: string } }) => setInfos((i) => ({ ...i, [cle]: cle === "experience" ? Number(e.target.value) : e.target.value })),
+  });
+
+  const verification = useVerificationNumero({
+    async creerCompte(jetonInscription) {
+      const ids = (noms: string[]) => noms.map((z) => idZone(zonesApi, z)).filter((id): id is string => Boolean(id));
+      await inscrire({
+        jetonInscription,
+        nom: infos.nom.trim(),
+        prenom: infos.prenom.trim(),
+        role: "TECHNICIEN",
+        zoneId: idZone(zonesApi, infos.zone),
+        entreprise: infos.entreprise.trim() || undefined,
+        technicien: { metierId: metier, specialites, experience: infos.experience, zones: ids(zones), bio: infos.bio.trim() || undefined },
+      });
+      // Compte créé : envoi des documents. Un échec ici ne bloque pas l'inscription (à refaire depuis l'espace technicien).
+      try {
+        await envoyerDocuments(documents, getMetier(metier).label);
+        toast("Profil créé ! Votre dossier de vérification niveau 1 est en cours d'examen.");
+      } catch (e) {
+        toast(`Profil créé, mais l'envoi des documents a échoué (${texteErreur(e)}). Renvoyez-les depuis « Vérification ».`, "error");
+      }
+      router.push("/technicien");
+    },
+    compteExistant(utilisateur) {
+      toast(`Ce numéro avait déjà un compte : vous êtes connecté, ${utilisateur.prenom}.`, "info");
+      router.push(ESPACE_ROLE[utilisateur.role]);
+    },
+  });
 
   useGSAP(
     () => {
@@ -60,11 +158,41 @@ export default function InscriptionTechnicienForm() {
 
   const toggle = (list: string[], set: (v: string[]) => void, v: string) => set(list.includes(v) ? list.filter((x) => x !== v) : [...list, v]);
 
-  function suivant(e: FormEvent) {
+  async function suivant(e: FormEvent) {
     e.preventDefault();
     if (etape < ETAPES.length - 1) return aller(etape + 1);
-    toast("Profil créé ! Votre dossier de vérification niveau 1 est en cours.");
-    router.push("/technicien");
+    if (!apiActive) {
+      toast("Profil créé ! Votre dossier de vérification niveau 1 est en cours.");
+      return router.push("/technicien");
+    }
+    if (!documents.identite.length) return setErreur("Ajoutez votre pièce d'identité : elle est nécessaire pour être visible des clients.");
+    setErreur("");
+    setDejaCompte(false);
+    setEnvoi(true);
+    try {
+      await verification.demarrer(telephone);
+    } catch (err) {
+      if (dejaInscrit(err)) setDejaCompte(true);
+      else setErreur(texteErreur(err));
+    } finally {
+      setEnvoi(false);
+    }
+  }
+
+  if (verification.telephone) {
+    return (
+      <EtapeCode
+        titre="Vérifiez votre numéro"
+        telephone={telephone}
+        onValider={verification.valider}
+        onRenvoyer={verification.renvoyer}
+        codeTest={verification.codeTest}
+        onRetour={() => {
+          verification.annuler();
+          aller(0);
+        }}
+      />
+    );
   }
 
   return (
@@ -100,16 +228,25 @@ export default function InscriptionTechnicienForm() {
             <>
               <div className="grid gap-4 sm:grid-cols-2">
                 <Field label="Nom *">
-                  <Input required placeholder="Diallo" autoComplete="family-name" />
+                  <Input required placeholder="Diallo" autoComplete="family-name" {...champ("nom")} />
                 </Field>
                 <Field label="Prénom *">
-                  <Input required placeholder="Mamadou" autoComplete="given-name" />
+                  <Input required placeholder="Mamadou" autoComplete="given-name" {...champ("prenom")} />
                 </Field>
-                <Field label="Téléphone *">
-                  <Input required type="tel" placeholder="620 12 34 56" autoComplete="tel-national" />
+                <Field label="Téléphone *" hint="Un code de vérification vous sera envoyé.">
+                  <Input
+                    required
+                    type="tel"
+                    placeholder="620 12 34 56"
+                    autoComplete="tel-national"
+                    pattern="\s*(\+?224)?[\s.]*6(\s*\d){8}\s*"
+                    title="Numéro mobile guinéen à 9 chiffres, ex. 620 12 34 56"
+                    value={telephone}
+                    onChange={(e) => setTelephone(e.target.value)}
+                  />
                 </Field>
                 <Field label="Zone principale *">
-                  <Select required defaultValue="Kaloum">
+                  <Select required {...champ("zone")}>
                     {ZONES.map((z) => (
                       <option key={z}>{z}</option>
                     ))}
@@ -117,7 +254,7 @@ export default function InscriptionTechnicienForm() {
                 </Field>
               </div>
               <Field label="Entreprise (optionnel)">
-                <Input placeholder="Nom de votre atelier ou entreprise" />
+                <Input placeholder="Nom de votre atelier ou entreprise" {...champ("entreprise")} />
               </Field>
             </>
           )}
@@ -127,7 +264,7 @@ export default function InscriptionTechnicienForm() {
               <div>
                 <p className="mb-2 text-sm font-semibold text-slate-700">Métier principal *</p>
                 <div className="grid grid-cols-4 gap-2">
-                  {METIERS.map((m) => (
+                  {metiers.map((m) => (
                     <button
                       key={m.id}
                       type="button"
@@ -163,7 +300,7 @@ export default function InscriptionTechnicienForm() {
               </div>
               <div className="grid gap-4 sm:grid-cols-2">
                 <Field label="Années d'expérience *">
-                  <Input required type="number" min={0} max={60} defaultValue={3} />
+                  <Input required type="number" min={0} max={60} {...champ("experience")} />
                 </Field>
                 <Field label="Disponibilité">
                   <Select defaultValue="semaine">
@@ -192,7 +329,7 @@ export default function InscriptionTechnicienForm() {
                 </div>
               </div>
               <Field label="Description">
-                <Textarea placeholder="Présentez votre expérience, vos points forts…" />
+                <Textarea placeholder="Présentez votre expérience, vos points forts…" maxLength={1000} {...champ("bio")} />
               </Field>
             </>
           )}
@@ -200,10 +337,10 @@ export default function InscriptionTechnicienForm() {
           {etape === 2 && (
             <>
               <p className="text-sm text-slate-500">Ces documents servent uniquement à la vérification de votre profil. Ils ne sont jamais publiés.</p>
-              <DropZone icon={IdCard} titre="Pièce d'identité *" texte="CNI ou passeport – photo recto/verso" />
-              <DropZone icon={GraduationCap} titre="Diplômes ou attestations" texte="Recommandé pour le niveau 2" />
-              <DropZone icon={ImagePlus} titre="Photos de réalisations" texte="Jusqu'à 10 photos de vos travaux" />
-              <DropZone icon={FileUp} titre="Photo de profil" texte="Visage bien visible, fond clair" />
+              <DropZone icon={IdCard} titre="Pièce d'identité *" texte="CNI ou passeport – photo recto/verso" type="piece" max={2} fichiers={documents.identite} onChange={(f) => setDocuments((d) => ({ ...d, identite: f }))} />
+              <DropZone icon={GraduationCap} titre="Diplômes ou attestations" texte="Recommandé pour le niveau 2" type="piece" max={5} fichiers={documents.diplomes} onChange={(f) => setDocuments((d) => ({ ...d, diplomes: f }))} />
+              <DropZone icon={ImagePlus} titre="Photos de réalisations" texte="Jusqu'à 10 photos de vos travaux" type="photo" max={10} fichiers={documents.realisations} onChange={(f) => setDocuments((d) => ({ ...d, realisations: f }))} />
+              <DropZone icon={FileUp} titre="Photo de profil" texte="Visage bien visible, fond clair" type="photo" fichiers={documents.photo} onChange={(f) => setDocuments((d) => ({ ...d, photo: f }))} />
               <label className="flex items-start gap-3 pt-2 text-sm text-slate-600">
                 <input required type="checkbox" className="mt-0.5 size-4 accent-brand-600" />
                 Je certifie l&apos;exactitude des informations et j&apos;accepte les conditions d&apos;utilisation de GDC.
@@ -212,14 +349,24 @@ export default function InscriptionTechnicienForm() {
           )}
         </div>
 
+        {erreur && <p className="mt-6 text-sm font-medium text-red-600">{erreur}</p>}
+        {dejaCompte && (
+          <div className="mt-6">
+            <DejaInscrit telephone={telephone} />
+          </div>
+        )}
         <div className="mt-8 flex gap-3">
           {etape > 0 && (
             <Button variant="ghost" size="lg" onClick={() => aller(etape - 1)}>
               <ArrowLeft className="size-4" /> Retour
             </Button>
           )}
-          <Button type="submit" size="lg" className="flex-1">
-            {etape < ETAPES.length - 1 ? (
+          <Button type="submit" size="lg" className="flex-1" disabled={envoi}>
+            {envoi ? (
+              <>
+                <span className="size-4 animate-spin rounded-full border-2 border-white/40 border-t-white" /> Envoi du code…
+              </>
+            ) : etape < ETAPES.length - 1 ? (
               <>
                 Suivant <ArrowRight className="size-4" />
               </>

@@ -7,9 +7,14 @@ import { enter, gsap, prefersReducedMotion, useGSAP } from "@/components/motion/
 import { Avatar, Button, Card, cn, Field, Input, LinkButton, MetierIcon, Rating, Select, Textarea } from "@/components/ui";
 import { Modal, Toggle } from "@/components/ui/interactive";
 import AdressePicker from "@/components/map/AdressePicker";
-import { formatGNF, getMetier, getTechnicien, METIERS, ZONES, type MetierId } from "@/lib/data";
+import { formatGNF, getMetier, getTechnicien, ZONES, type MetierId } from "@/lib/data";
+import { useMetiers } from "@/lib/plateforme";
 import type { Point } from "@/lib/geo";
 import { notifier } from "@/lib/notifier";
+import { apiActive, texteErreur } from "@/lib/api";
+import { idZone, useZonesApi, type ZoneApi } from "@/lib/auth";
+import { creerDemande } from "@/lib/demandes";
+import { lireSession } from "@/lib/session";
 
 const ETAPES = ["Votre besoin", "Lieu et date"];
 const CLE_BROUILLON = "gdc:demande-brouillon";
@@ -37,6 +42,26 @@ function lireBrouillon(): Brouillon | null {
   }
 }
 
+/** Envoi du brouillon à l'API (les zones sont désignées par leur identifiant côté serveur). */
+async function envoyerBrouillon(b: Brouillon, zones: ZoneApi[]) {
+  const zoneId = idZone(zones, b.zone);
+  if (!zoneId) throw new Error(`La zone ${b.zone} n'est pas encore desservie par GDC.`);
+  if (b.adresse.trim().length < 3) throw new Error("Indiquez l'adresse de l'intervention (quartier, rue, repère).");
+  await creerDemande({
+    metierId: b.metier,
+    titre: b.titre.trim(),
+    description: b.description.trim(),
+    zoneId,
+    adresse: b.adresse.trim(),
+    lat: b.point?.lat,
+    lng: b.point?.lng,
+    urgente: b.urgent,
+    dateSouhaitee: b.date || undefined,
+    budget: b.budget ? Number(b.budget) : undefined,
+    technicienId: b.technicien,
+  });
+}
+
 function ecrireBrouillon(b: Brouillon | null) {
   try {
     if (b) sessionStorage.setItem(CLE_BROUILLON, JSON.stringify(b));
@@ -51,6 +76,7 @@ function ecrireBrouillon(b: Brouillon | null) {
  * se connecte ou crée son compte, puis revient ici avec `?envoi=1` pour finaliser l'envoi.
  */
 function Wizard() {
+  const metiers = useMetiers();
   const params = useSearchParams();
   const retourAuth = params.get("envoi") === "1";
   // Rendu côté client uniquement (useSearchParams sous Suspense) : la lecture du stockage est sûre ici.
@@ -71,14 +97,35 @@ function Wizard() {
   const [urgent, setUrgent] = useState(initial?.urgent ?? false);
   const [budget, setBudget] = useState(initial?.budget ?? "");
   const [authRequise, setAuthRequise] = useState(false);
-  const envoyee = initial !== null;
+  // Demande envoyée sans détour (visiteur déjà connecté en tant que client).
+  const [envoiDirect, setEnvoiDirect] = useState<Brouillon | null>(null);
+  const recap = initial ?? envoiDirect;
+  const envoyee = recap !== null;
+  // Avec l'API : l'envoi part au retour de la connexion, l'écran de confirmation attend la réponse.
+  const [etatEnvoi, setEtatEnvoi] = useState<{ statut: "en_cours" | "ok" | "erreur"; message?: string }>({ statut: apiActive && initial ? "en_cours" : "ok" });
+  const [envoi, setEnvoi] = useState(false);
+  const [erreur, setErreur] = useState("");
+  const zonesApi = useZonesApi(apiActive);
+  const dejaEnvoye = useRef(false);
 
-  // Une fois la demande envoyée après connexion : SMS de confirmation, puis le brouillon n'a plus lieu d'être.
+  // Retour de la connexion : la demande part, puis le brouillon n'a plus lieu d'être.
   useEffect(() => {
-    if (!envoyee) return;
-    ecrireBrouillon(null);
-    notifier("demande_publiee", { mission: initial?.titre });
-  }, [envoyee, initial]);
+    if (!initial) return;
+    if (!apiActive) {
+      ecrireBrouillon(null);
+      notifier("demande_publiee", { mission: initial.titre });
+      return;
+    }
+    // Une seule fois, même si l'effet est rejoué (mode strict de React en développement).
+    if (dejaEnvoye.current || !zonesApi.length) return;
+    dejaEnvoye.current = true;
+    envoyerBrouillon(initial, zonesApi)
+      .then(() => {
+        ecrireBrouillon(null);
+        setEtatEnvoi({ statut: "ok" });
+      })
+      .catch((e) => setEtatEnvoi({ statut: "erreur", message: texteErreur(e) }));
+  }, [initial, zonesApi]);
 
   useGSAP(
     () => {
@@ -108,15 +155,71 @@ function Wizard() {
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
-  function suivant(e: FormEvent) {
+  async function suivant(e: FormEvent) {
     e.preventDefault();
     if (etape < ETAPES.length - 1) return aller(etape + 1);
-    // Fin du formulaire : on garde la demande et on demande au visiteur de s'identifier.
-    ecrireBrouillon({ technicien: tech?.id, metier, titre, description, zone, adresse, point, date, urgent, budget });
+    const brouillon: Brouillon = { technicien: tech?.id ?? params.get("technicien") ?? undefined, metier, titre, description, zone, adresse, point, date, urgent, budget };
+    // Déjà connecté en tant que client : la demande part tout de suite.
+    if (apiActive && lireSession()?.utilisateur.role === "CLIENT") {
+      setErreur("");
+      setEnvoi(true);
+      try {
+        await envoyerBrouillon(brouillon, zonesApi);
+        setEnvoiDirect(brouillon);
+        window.scrollTo({ top: 0, behavior: "smooth" });
+      } catch (err) {
+        setErreur(texteErreur(err));
+      } finally {
+        setEnvoi(false);
+      }
+      return;
+    }
+    // Sinon : on garde la demande et on demande au visiteur de s'identifier.
+    ecrireBrouillon(brouillon);
     setAuthRequise(true);
   }
 
   const retour = encodeURIComponent("/publier-une-demande?envoi=1");
+
+  if (envoyee && etatEnvoi.statut !== "ok") {
+    return (
+      <div className="mx-auto max-w-xl py-10">
+        <Card className="p-10 text-center">
+          {etatEnvoi.statut === "en_cours" ? (
+            <>
+              <span className="mx-auto block size-10 animate-spin rounded-full border-4 border-brand-100 border-t-brand-600" />
+              <p className="mt-5 font-semibold text-slate-800">Envoi de votre demande…</p>
+            </>
+          ) : (
+            <>
+              <h2 className="text-xl font-extrabold text-brand-950">La demande n&apos;a pas pu être envoyée</h2>
+              <p className="mt-2 text-slate-500">{etatEnvoi.message}</p>
+              <p className="mt-1 text-sm text-slate-400">Elle est conservée : réessayez, ou créez-la depuis votre espace client.</p>
+              <div className="mt-6 flex flex-col gap-2 sm:flex-row sm:justify-center">
+                <Button
+                  size="lg"
+                  onClick={() => {
+                    setEtatEnvoi({ statut: "en_cours" });
+                    envoyerBrouillon(recap, zonesApi)
+                      .then(() => {
+                        ecrireBrouillon(null);
+                        setEtatEnvoi({ statut: "ok" });
+                      })
+                      .catch((e) => setEtatEnvoi({ statut: "erreur", message: texteErreur(e) }));
+                  }}
+                >
+                  Réessayer
+                </Button>
+                <LinkButton href="/client/demandes/nouvelle" size="lg" variant="ghost">
+                  Mon espace client
+                </LinkButton>
+              </div>
+            </>
+          )}
+        </Card>
+      </div>
+    );
+  }
 
   if (envoyee) {
     return (
@@ -128,7 +231,7 @@ function Wizard() {
           </svg>
           <div className="ok-text">
             <h2 className="mt-6 text-2xl font-extrabold text-brand-950">Votre demande est envoyée !</h2>
-            <p className="mt-2 font-semibold text-slate-800">« {initial.titre} »</p>
+            <p className="mt-2 font-semibold text-slate-800">« {recap.titre} »</p>
             <p className="mt-2 text-slate-500">
               {tech ? `${tech.nom} a été prévenu et vous répondra rapidement.` : "Les professionnels vérifiés de votre zone ont été prévenus."} Suivez les
               réponses et l&apos;avancement de la mission depuis votre espace client.
@@ -186,7 +289,7 @@ function Wizard() {
                   <p className="mt-1 text-sm text-slate-500">Choisissez le métier puis décrivez votre problème.</p>
                 </div>
                 <div className="grid grid-cols-4 gap-2 md:grid-cols-8">
-                  {METIERS.map((m) => (
+                  {metiers.map((m) => (
                     <button
                       key={m.id}
                       type="button"
@@ -280,20 +383,21 @@ function Wizard() {
             )}
           </div>
 
+          {erreur && <p className="mt-6 text-sm font-medium text-red-600">{erreur}</p>}
           <div className="mt-8 flex gap-3 border-t border-slate-100 pt-6">
             {etape > 0 && (
               <Button variant="ghost" size="lg" onClick={() => aller(etape - 1)}>
                 <ArrowLeft className="size-4" /> Retour
               </Button>
             )}
-            <Button type="submit" size="lg" className="flex-1">
+            <Button type="submit" size="lg" className="flex-1" disabled={envoi}>
               {etape < ETAPES.length - 1 ? (
                 <>
                   Continuer <ArrowRight className="size-4" />
                 </>
               ) : (
                 <>
-                  <Send className="size-4" /> Envoyer la demande
+                  <Send className="size-4" /> {envoi ? "Envoi…" : "Envoyer la demande"}
                 </>
               )}
             </Button>

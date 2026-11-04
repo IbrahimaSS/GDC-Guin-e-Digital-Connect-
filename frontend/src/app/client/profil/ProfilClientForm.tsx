@@ -8,9 +8,202 @@ import Reveal from "@/components/motion/Reveal";
 import PhotoUpload from "@/components/ui/PhotoUpload";
 import { toast } from "@/components/motion/Toaster";
 import { Avatar, Button, Card, CardHeader, Field, Input, PageHeader, Rating, Select } from "@/components/ui";
+import { api, apiActive, texteErreur } from "@/lib/api";
+import { idZone, useZonesApi } from "@/lib/auth";
 import { CLIENT_CONNECTE, TECHNICIENS, ZONES } from "@/lib/data";
+import { mettreAJourUtilisateur, useSession, type UtilisateurApi } from "@/lib/session";
+import { useApi } from "@/lib/useApi";
 
 export default function ProfilClientForm() {
+  return apiActive ? <ProfilApi /> : <ProfilDemo />;
+}
+
+// ------------------------------------------------------------ Avec l'API
+
+interface AdresseApi {
+  id: string;
+  label: string;
+  texte: string;
+  zone: { id: string; nom: string } | null;
+}
+
+function ProfilApi() {
+  const session = useSession();
+  if (!session) return null;
+  // Formulaire réinitialisé si un autre compte se connecte.
+  return <FormulaireProfil key={session.utilisateur.id} utilisateur={session.utilisateur} />;
+}
+
+function FormulaireProfil({ utilisateur: u }: { utilisateur: UtilisateurApi }) {
+  const [infos, setInfos] = useState({
+    nom: u.nom,
+    prenom: u.prenom,
+    email: u.email ?? "",
+    zone: u.zone?.nom ?? "",
+    typeClient: u.typeClient ?? "PARTICULIER",
+    entreprise: u.entreprise ?? "",
+  });
+  const [envoi, setEnvoi] = useState(false);
+  const zones = useZonesApi(true);
+  const { donnees: adresses = [], recharger: rechargerAdresses } = useApi<AdresseApi[]>("/moi/adresses");
+  const [nouvelle, setNouvelle] = useState({ label: "", texte: "" });
+
+  async function ajouterAdresse() {
+    try {
+      await api("/moi/adresses", {
+        methode: "POST",
+        corps: { label: nouvelle.label.trim() || "Adresse", texte: nouvelle.texte.trim(), zoneId: idZone(zones, infos.zone) },
+      });
+      setNouvelle({ label: "", texte: "" });
+      rechargerAdresses();
+    } catch (e) {
+      toast(texteErreur(e), "error");
+    }
+  }
+
+  async function supprimerAdresse(id: string) {
+    try {
+      await api(`/moi/adresses/${id}`, { methode: "DELETE" });
+      rechargerAdresses();
+    } catch (e) {
+      toast(texteErreur(e), "error");
+    }
+  }
+  const champ = (cle: keyof typeof infos) => ({ value: infos[cle], onChange: (e: { target: { value: string } }) => setInfos((i) => ({ ...i, [cle]: e.target.value })) });
+
+  const etapes = [Boolean(u.nom && u.prenom), Boolean(infos.email), Boolean(infos.zone), Boolean(u.photoUrl)];
+  const complet = Math.round((etapes.filter(Boolean).length / etapes.length) * 100);
+  const membreDepuis = new Date(u.inscritLe).toLocaleDateString("fr-FR", { month: "short", year: "numeric" });
+
+  async function enregistrer() {
+    if (!infos.nom.trim() || !infos.prenom.trim()) return toast("Le nom et le prénom sont obligatoires.", "error");
+    setEnvoi(true);
+    try {
+      const maj = await api<UtilisateurApi>("/moi", {
+        methode: "PATCH",
+        corps: {
+          nom: infos.nom.trim(),
+          prenom: infos.prenom.trim(),
+          email: infos.email.trim() || undefined,
+          zoneId: idZone(zones, infos.zone),
+          typeClient: infos.typeClient,
+          entreprise: infos.typeClient === "ENTREPRISE" ? infos.entreprise.trim() || undefined : undefined,
+        },
+      });
+      mettreAJourUtilisateur(maj);
+      toast("Profil mis à jour");
+    } catch (e) {
+      toast(texteErreur(e), "error");
+    } finally {
+      setEnvoi(false);
+    }
+  }
+
+  return (
+    <>
+      <PageHeader title="Mon profil" subtitle="Ces informations sont partagées avec les techniciens que vous contactez." />
+      <div className="grid gap-6 xl:grid-cols-[320px_1fr]">
+        <Reveal className="space-y-6">
+          <Card className="p-6 text-center">
+            <PhotoUpload nom={u.nomComplet} photo={u.photoUrl} />
+            <p className="mt-4 text-lg font-bold text-slate-900">{u.nomComplet}</p>
+            <p className="text-sm text-slate-500">
+              {u.typeClient === "ENTREPRISE" ? "Entreprise" : "Particulier"} · Membre depuis {membreDepuis}
+            </p>
+            <div className="mt-5 text-left">
+              <div className="mb-1.5 flex justify-between text-xs font-semibold">
+                <span className="text-slate-600">Profil complété</span>
+                <span className="text-brand-600">{complet} %</span>
+              </div>
+              <ProgressBar value={complet} />
+              {!infos.email && <p className="mt-2 text-xs text-slate-500">Ajoutez votre e-mail pour recevoir vos reçus de paiement.</p>}
+            </div>
+          </Card>
+        </Reveal>
+
+        <Reveal className="space-y-6" delay={0.1}>
+          <Card className="p-6">
+            <h2 className="mb-5 font-bold text-slate-900">Informations personnelles</h2>
+            <div className="grid gap-4 md:grid-cols-2">
+              <Field label="Nom">
+                <Input maxLength={60} {...champ("nom")} />
+              </Field>
+              <Field label="Prénom">
+                <Input maxLength={60} {...champ("prenom")} />
+              </Field>
+              <Field label="Téléphone" hint="Votre numéro sert à vous connecter : contactez le support pour le changer.">
+                <Input value={u.telephone} disabled />
+              </Field>
+              <Field label="E-mail">
+                <Input type="email" placeholder="nom@exemple.gn" {...champ("email")} />
+              </Field>
+              <Field label="Type de compte">
+                <Select {...champ("typeClient")}>
+                  <option value="PARTICULIER">Particulier</option>
+                  <option value="ENTREPRISE">Entreprise / PME</option>
+                </Select>
+              </Field>
+              <Field label="Zone">
+                <Select {...champ("zone")}>
+                  <option value="" disabled>
+                    Choisir une zone
+                  </option>
+                  {zones.map((z) => (
+                    <option key={z.id}>{z.nom}</option>
+                  ))}
+                </Select>
+              </Field>
+              {infos.typeClient === "ENTREPRISE" && (
+                <Field label="Nom de l'entreprise" className="md:col-span-2">
+                  <Input maxLength={120} {...champ("entreprise")} />
+                </Field>
+              )}
+            </div>
+          </Card>
+
+          <Card className="p-6">
+            <h2 className="font-bold text-slate-900">Mes adresses d&apos;intervention</h2>
+            <p className="mb-4 mt-1 text-xs text-slate-500">Proposées lors de vos prochaines demandes, pour aller plus vite.</p>
+            <Reveal className="space-y-2" deps={[adresses.length]} y={10}>
+              {adresses.map((a) => (
+                <div key={a.id} className="flex items-center gap-3 rounded-xl border border-slate-200 p-3">
+                  <span className="rounded-lg bg-brand-50 p-2 text-brand-600">{a.label === "Domicile" ? <Home className="size-4" /> : <MapPin className="size-4" />}</span>
+                  <div className="flex-1">
+                    <p className="text-sm font-bold">{a.label}</p>
+                    <p className="text-xs text-slate-500">
+                      {a.texte}
+                      {a.zone && ` · ${a.zone.nom}`}
+                    </p>
+                  </div>
+                  <button onClick={() => supprimerAdresse(a.id)} className="rounded-lg p-1.5 text-slate-400 hover:bg-red-50 hover:text-red-500" aria-label="Supprimer">
+                    <Trash2 className="size-4" />
+                  </button>
+                </div>
+              ))}
+            </Reveal>
+            <div className="mt-3 grid gap-2 sm:grid-cols-[140px_1fr_auto]">
+              <Input placeholder="Domicile, Bureau…" value={nouvelle.label} onChange={(e) => setNouvelle({ ...nouvelle, label: e.target.value })} />
+              <Input placeholder="Quartier, rue, repère" value={nouvelle.texte} onChange={(e) => setNouvelle({ ...nouvelle, texte: e.target.value })} />
+              <Button variant="outline" disabled={nouvelle.texte.trim().length < 3} onClick={ajouterAdresse}>
+                <Plus className="size-4" /> Ajouter
+              </Button>
+            </div>
+          </Card>
+
+          <div className="flex justify-end gap-2">
+            <Button size="lg" onClick={enregistrer} disabled={envoi}>
+              {envoi ? "Enregistrement…" : "Enregistrer"}
+            </Button>
+          </div>
+        </Reveal>
+      </div>
+    </>
+  );
+}
+
+// ------------------------------------------------------------ Démonstration
+
+function ProfilDemo() {
   const [adresses, setAdresses] = useState([
     { id: 1, label: "Domicile", texte: CLIENT_CONNECTE.adresse, zone: "Kaloum" },
     { id: 2, label: "Bureau", texte: "Immeuble Kaloum Center, 2e étage", zone: "Kaloum" },

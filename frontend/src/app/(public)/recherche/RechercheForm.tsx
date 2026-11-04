@@ -7,7 +7,8 @@ import { useState, type FormEvent } from "react";
 import Reveal from "@/components/motion/Reveal";
 import { Button, Card, Field, Select } from "@/components/ui";
 import { Toggle } from "@/components/ui/interactive";
-import { METIERS, NIVEAUX, ZONES, type MetierId } from "@/lib/data";
+import { NIVEAUX, ZONES, type MetierId } from "@/lib/data";
+import { useMetiers } from "@/lib/plateforme";
 
 const SPECIALITES: Partial<Record<MetierId, string[]>> = {
   electricite: ["Installation", "Dépannage", "Maintenance", "Solaire"],
@@ -27,6 +28,7 @@ const GARANTIES = [
 
 /** Carte de recherche détaillée, posée à cheval sur le bandeau d'en-tête. */
 export default function RechercheForm() {
+  const metiers = useMetiers();
   const router = useRouter();
   const [metier, setMetier] = useState<MetierId | "">("");
   const [specialite, setSpecialite] = useState("");
@@ -61,7 +63,7 @@ export default function RechercheForm() {
                 }}
               >
                 <option value="">Tous les métiers</option>
-                {METIERS.map((m) => (
+                {metiers.map((m) => (
                   <option key={m.id} value={m.id}>
                     {m.label}
                   </option>

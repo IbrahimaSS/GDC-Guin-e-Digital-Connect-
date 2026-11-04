@@ -32,13 +32,17 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
-import { useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { usePathname, useRouter } from "next/navigation";
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { enter, gsap, useGSAP } from "@/components/motion/gsap";
 import PageTransition from "@/components/motion/PageTransition";
+import { toast } from "@/components/motion/Toaster";
 import ThemeToggle from "@/components/ui/ThemeToggle";
 import { Avatar, cn, Logo } from "@/components/ui";
+import { api, apiActive } from "@/lib/api";
+import { deconnecter } from "@/lib/auth";
 import type { Role } from "@/lib/data";
+import { ESPACE_ROLE, lireSession, mettreAJourUtilisateur, useSession, type UtilisateurApi } from "@/lib/session";
 
 interface NavItem {
   href: string;
@@ -250,10 +254,28 @@ function Sidebar({ role, onNavigate }: { role: Role; onNavigate?: () => void }) 
   );
 }
 
+/** Libellé sous le nom : rôle, métier et niveau pour un technicien. */
+function libelleRole(u: UtilisateurApi): string {
+  if (u.role === "ADMIN") return "Administration GDC";
+  if (u.technicien) return `${u.technicien.metier.label} · ${u.technicien.niveau ? `Niveau ${u.technicien.niveau}` : "Vérification en attente"}`;
+  return u.typeClient === "ENTREPRISE" ? (u.entreprise ?? "Entreprise") : "Client";
+}
+
 function UserMenu({ role }: { role: Role }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
-  const { user } = NAV[role];
+  const router = useRouter();
+  const session = useSession();
+  const user = apiActive && session ? { nom: session.utilisateur.nomComplet, role: libelleRole(session.utilisateur) } : NAV[role].user;
+
+  async function seDeconnecter() {
+    setOpen(false);
+    if (apiActive) {
+      await deconnecter();
+      toast("Vous êtes déconnecté.", "info");
+    }
+    router.push("/connexion");
+  }
 
   // Referme le menu quand la page est masquée (navigation conservée par Activity).
   useLayoutEffect(() => () => setOpen(false), []);
@@ -281,7 +303,7 @@ function UserMenu({ role }: { role: Role }) {
         className="flex items-center gap-2.5 rounded-xl p-1 pr-2 transition hover:bg-slate-100"
         aria-expanded={open}
       >
-        <Avatar nom={user.nom} className="size-9 text-xs" />
+        <Avatar nom={user.nom} photo={(apiActive && session?.utilisateur.photoUrl) || undefined} className="size-9 text-xs" />
         <span className="hidden text-left sm:block">
           <span className="block text-sm font-bold leading-tight text-slate-900">{user.nom}</span>
           <span className="block text-xs text-slate-500">{user.role}</span>
@@ -303,13 +325,13 @@ function UserMenu({ role }: { role: Role }) {
               </Link>
             ))}
             <div className="my-1 h-px bg-slate-100" />
-            <Link
-              href="/connexion"
-              onClick={() => setOpen(false)}
-              className="flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm font-medium text-red-600 hover:bg-red-50"
+            <button
+              type="button"
+              onClick={seDeconnecter}
+              className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-left text-sm font-medium text-red-600 hover:bg-red-50"
             >
               <LogOut className="size-4" /> Déconnexion
-            </Link>
+            </button>
           </div>
         </>
       )}
@@ -317,9 +339,38 @@ function UserMenu({ role }: { role: Role }) {
   );
 }
 
+/**
+ * Avec l'API : l'espace exige une session du bon rôle. Sans session, retour à la connexion ;
+ * avec un autre rôle, redirection vers son propre espace. En démonstration, tout reste ouvert.
+ */
+function useAccesEspace(role: Role) {
+  const router = useRouter();
+  const pathname = usePathname();
+  const session = useSession();
+
+  useEffect(() => {
+    if (!apiActive) return;
+    // Lecture directe : pendant l'hydratation, le hook renvoie encore « pas de session ».
+    const s = lireSession();
+    if (!s) router.replace(`/connexion?redirect=${encodeURIComponent(pathname)}`);
+    else if (ESPACE_ROLE[s.utilisateur.role] !== HOME[role]) router.replace(ESPACE_ROLE[s.utilisateur.role]);
+  }, [session, pathname, role, router]);
+
+  // Profil rafraîchi à l'ouverture de l'espace (niveau validé, disponibilité… modifiés depuis la connexion).
+  useEffect(() => {
+    if (!apiActive || !lireSession()) return;
+    api<UtilisateurApi>("/moi")
+      .then(mettreAJourUtilisateur)
+      .catch(() => undefined);
+  }, []);
+
+  return !apiActive || (session !== null && ESPACE_ROLE[session.utilisateur.role] === HOME[role]);
+}
+
 export default function DashboardShell({ role, children }: { role: Role; children: ReactNode }) {
   const root = useRef<HTMLDivElement>(null);
   const [mobileOpen, setMobileOpen] = useState(false);
+  const autorise = useAccesEspace(role);
   const notifHref = role === "admin" ? "/admin/signalements" : `${HOME[role]}/notifications`;
 
   useGSAP(
@@ -388,10 +439,18 @@ export default function DashboardShell({ role, children }: { role: Role; childre
           </div>
         </header>
         <main className="px-4 py-6 md:px-8 md:py-8">
-          <PageTransition className="mx-auto max-w-[1600px]">
-            <FilAriane role={role} />
-            {children}
-          </PageTransition>
+          {/* Le contenu est toujours rendu (préparation des pages par Next), mais masqué tant que l'accès n'est pas confirmé. */}
+          {!autorise && (
+            <div className="flex min-h-[50vh] items-center justify-center" aria-busy="true">
+              <span className="size-8 animate-spin rounded-full border-4 border-brand-100 border-t-brand-600" />
+            </div>
+          )}
+          <div hidden={!autorise}>
+            <PageTransition className="mx-auto max-w-[1600px]">
+              <FilAriane role={role} />
+              {children}
+            </PageTransition>
+          </div>
         </main>
       </div>
     </div>

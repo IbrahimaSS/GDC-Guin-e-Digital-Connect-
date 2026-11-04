@@ -87,6 +87,8 @@ export interface Technicien {
   /** Photo de profil (dossier public/images). */
   photo: string;
   realisations: { titre: string; categorie: string; image: string }[];
+  /** Tarifs indicatifs (API) */
+  tarifs?: { prestation: string; prix: number }[];
   avis: Avis[];
   inscrit: string;
   statut: "actif" | "suspendu" | "en_attente";
@@ -392,6 +394,20 @@ export interface Demande {
   budget?: number;
   evaluee?: boolean;
   chronologie: EtapeChronologie[];
+  /** Données propres à l'API (absentes en démonstration) : voir src/lib/demandes.ts. */
+  api?: {
+    /** Technicien retenu, tel que l'API le décrit (il n'existe pas forcément dans TECHNICIENS). */
+    technicien?: { id: string; nom: string; photoUrl: string | null; note: number; nbAvis: number; niveau: number; experience: number; telephone?: string };
+    /** Code d'intervention et contenu du QR code : remis au client seulement, une fois la demande acceptée. */
+    code?: string;
+    qr?: string;
+    /** Photos jointes à la demande */
+    photos?: string[];
+    /** Dates au format ISO (graphiques, agenda) */
+    creeLe?: string;
+    termineeLe?: string | null;
+    dateSouhaitee?: string | null;
+  };
 }
 
 function chrono(statut: StatutDemande, dates: string[]): EtapeChronologie[] {
@@ -749,7 +765,12 @@ export const TECHNICIEN_CONNECTE = TECHNICIENS[0];
 
 /* ------------------------------------------------------------------- Helpers */
 
-export const getMetier = (id: MetierId) => METIERS.find((m) => m.id === id)!;
+/** Métiers connus de l'API (ajoutés par le back-office), renseignés par useMetiers(). */
+export const METIERS_API = new Map<string, Metier>();
+
+/** Métier par identifiant : celui de l'API s'il est connu, sinon celui de la maquette (jamais indéfini). */
+export const getMetier = (id: MetierId): Metier =>
+  METIERS_API.get(id) ?? METIERS.find((m) => m.id === id) ?? { id, label: id.charAt(0).toUpperCase() + id.slice(1).replace(/-/g, " "), techniciens: 0, demandes: 0, actif: true };
 export const getTechnicien = (id: string) => TECHNICIENS.find((t) => t.id === id);
 export const getDemande = (id: string) => TOUTES_DEMANDES.find((d) => d.id === id);
 

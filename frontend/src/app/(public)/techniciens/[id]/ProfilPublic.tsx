@@ -11,7 +11,8 @@ import { toast } from "@/components/motion/Toaster";
 import { Avatar, Button, Card, DispoBadge, LinkButton, Rating, Stars, VerificationBadge } from "@/components/ui";
 import { Tabs } from "@/components/ui/interactive";
 import { ProgressBar } from "@/components/motion/Charts";
-import { getMetier, NIVEAUX, type Avis, type Technicien } from "@/lib/data";
+import { apiActive } from "@/lib/api";
+import { formatGNF, getMetier, NIVEAUX, type Avis, type Technicien } from "@/lib/data";
 
 type Onglet = "presentation" | "realisations" | "avis";
 
@@ -156,7 +157,21 @@ function Presentation({ tech, onVoirAvis }: { tech: Technicien; onVoirAvis: () =
     <Reveal className="grid gap-8 md:grid-cols-[1.6fr_1fr]" stagger={0.12}>
       <div>
         <h2 className="mb-2 font-bold text-slate-900">À propos</h2>
-        <p className="leading-relaxed text-slate-600">{tech.bio}</p>
+        <p className="leading-relaxed text-slate-600">{tech.bio || "Ce professionnel n'a pas encore rédigé sa présentation."}</p>
+        {tech.tarifs && tech.tarifs.length > 0 && (
+          <div className="mt-6 rounded-2xl border border-slate-200 p-4">
+            <h3 className="mb-2 text-sm font-bold text-slate-900">Tarifs indicatifs</h3>
+            <ul className="divide-y divide-slate-100 text-sm">
+              {tech.tarifs.map((t) => (
+                <li key={t.prestation} className="flex justify-between gap-3 py-2">
+                  <span className="text-slate-600">{t.prestation}</span>
+                  <span className="whitespace-nowrap font-semibold text-slate-900">{formatGNF(t.prix)}</span>
+                </li>
+              ))}
+            </ul>
+            <p className="mt-2 text-xs text-slate-400">Le prix définitif est celui du devis envoyé après diagnostic.</p>
+          </div>
+        )}
         <ul className="mt-6 space-y-3">
           {infos.map(({ icon: Icon, label, valeur }) => (
             <li key={label} className="flex items-start gap-3 text-sm">
@@ -225,11 +240,24 @@ function avisAnciens(tech: Technicien): Avis[] {
 const PAR_PAGE = 5;
 
 function ListeAvis({ tech }: { tech: Technicien }) {
-  const tous = [...tech.avis, ...avisAnciens(tech)];
+  // Avec l'API : uniquement les vrais avis publiés, et leur vraie répartition.
+  const tous = apiActive ? tech.avis : [...tech.avis, ...avisAnciens(tech)];
   const [affiches, setAffiches] = useState(Math.min(PAR_PAGE, tous.length));
   const repartition = [5, 4, 3, 2, 1].map((n) => ({
     n,
-    pct: n === 5 ? 78 : n === 4 ? 16 : n === 3 ? 4 : n === 2 ? 2 : 0,
+    pct: apiActive
+      ? tous.length
+        ? Math.round((tous.filter((a) => a.note === n).length / tous.length) * 100)
+        : 0
+      : n === 5
+        ? 78
+        : n === 4
+          ? 16
+          : n === 3
+            ? 4
+            : n === 2
+              ? 2
+              : 0,
   }));
   return (
     <div className="grid gap-8 md:grid-cols-[280px_1fr]">

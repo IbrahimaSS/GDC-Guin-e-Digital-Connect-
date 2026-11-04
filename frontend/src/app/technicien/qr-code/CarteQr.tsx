@@ -5,9 +5,11 @@ import { BadgeCheck, Copy, Download, MapPin, Phone, Printer, Share2, Star } from
 import { useSyncExternalStore } from "react";
 import Reveal from "@/components/motion/Reveal";
 import { toast } from "@/components/motion/Toaster";
-import { Avatar, Button, Card, Logo, PageHeader, VerificationBadge } from "@/components/ui";
+import { Avatar, Button, Card, EmptyState, LinkButton, Logo, PageHeader, VerificationBadge } from "@/components/ui";
 import QrCode, { OPTIONS_QR } from "@/components/ui/QrCode";
-import { getMetier, NIVEAUX, TECHNICIEN_CONNECTE as moi } from "@/lib/data";
+import { apiActive } from "@/lib/api";
+import { getMetier, NIVEAUX, TECHNICIEN_CONNECTE as maquette, type MetierId, type Niveau, type Technicien } from "@/lib/data";
+import { useSession } from "@/lib/session";
 
 const IDEES = [
   { titre: "Carte de visite", texte: "Imprimez votre carte et laissez-la à chaque client." },
@@ -16,8 +18,50 @@ const IDEES = [
   { titre: "Statut WhatsApp", texte: "Partagez l'image du QR code à vos contacts." },
 ];
 
-/** Carte professionnelle du technicien avec QR code vers son profil public. */
+/** Technicien connecté au format des écrans (le technicien de la maquette en démonstration). */
+function useMoi(): Technicien | null {
+  const session = useSession();
+  if (!apiActive) return maquette;
+  const u = session?.utilisateur;
+  const t = u?.technicien;
+  if (!u || !t || t.niveau < 1) return null;
+  return {
+    ...maquette,
+    id: t.id,
+    nom: u.nomComplet,
+    metier: t.metier.id as MetierId,
+    specialites: t.specialites,
+    zone: u.zone?.nom ?? t.zones[0]?.nom ?? "Conakry",
+    niveau: Math.min(3, t.niveau) as Niveau,
+    note: t.note,
+    nbAvis: t.nbAvis,
+    telephone: u.telephone,
+    // Sans photo, l'avatar affiche les initiales (jamais la photo de la maquette).
+    photo: u.photoUrl ?? "",
+  };
+}
+
 export default function CarteQr() {
+  const moi = useMoi();
+  if (!moi) {
+    return (
+      <div className="mx-auto max-w-xl space-y-4 py-10 text-center">
+        <EmptyState
+          icon={BadgeCheck}
+          title="QR code disponible après vérification"
+          text="Votre profil public, vers lequel mène le QR code, s'affiche dès que votre identité est vérifiée par l'équipe GDC."
+        />
+        <LinkButton href="/technicien/verification/suivi" variant="outline">
+          Suivre ma vérification
+        </LinkButton>
+      </div>
+    );
+  }
+  return <Carte moi={moi} />;
+}
+
+/** Carte professionnelle du technicien avec QR code vers son profil public. */
+function Carte({ moi }: { moi: Technicien }) {
   // L'adresse du profil dépend du domaine sur lequel le site est servi (inconnu lors du rendu serveur).
   const origine = useSyncExternalStore(
     () => () => {},
@@ -75,7 +119,7 @@ export default function CarteQr() {
             <div className="mt-6 flex flex-col gap-6 sm:flex-row sm:items-center">
               <div className="flex-1">
                 <div className="flex items-center gap-3">
-                  <Avatar nom={moi.nom} className="size-16 ring-2 ring-white/40" />
+                  <Avatar nom={moi.nom} photo={apiActive ? moi.photo || undefined : undefined} className="size-16 ring-2 ring-white/40" />
                   <div>
                     <p className="flex items-center gap-1.5 text-xl font-extrabold">
                       {moi.nom} <BadgeCheck className="size-5 text-accent-400" />

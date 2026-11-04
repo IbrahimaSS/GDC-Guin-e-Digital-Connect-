@@ -67,7 +67,8 @@ export function Avatar({ nom, photo, className = "size-11 text-sm" }: { nom: str
   if (src) {
     return (
       <span className={cn("relative inline-block shrink-0 overflow-hidden rounded-full bg-slate-200", className)} aria-hidden>
-        <Image src={src} alt="" fill sizes="160px" className="object-cover object-[50%_25%]" />
+        {/* Photos envoyées par les utilisateurs : servies par l'API, affichées telles quelles. */}
+        <Image src={src} alt="" fill sizes="160px" unoptimized={!src.startsWith("/")} className="object-cover object-[50%_25%]" />
       </span>
     );
   }

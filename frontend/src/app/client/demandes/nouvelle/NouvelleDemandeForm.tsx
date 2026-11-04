@@ -9,10 +9,21 @@ import Reveal from "@/components/motion/Reveal";
 import { Avatar, Button, Card, cn, Field, Input, LinkButton, MetierIcon, PageHeader, Rating, Select, Textarea } from "@/components/ui";
 import { Toggle } from "@/components/ui/interactive";
 import AdressePicker from "@/components/map/AdressePicker";
-import { CLIENT_CONNECTE, formatGNF, getMetier, getTechnicien, METIERS, ZONES, type MetierId } from "@/lib/data";
+import { CLIENT_CONNECTE, formatGNF, getMetier, getTechnicien, ZONES, type MetierId } from "@/lib/data";
+import { useMetiers } from "@/lib/plateforme";
 import type { Point } from "@/lib/geo";
+import { apiActive, texteErreur } from "@/lib/api";
+import { idZone, useZonesApi } from "@/lib/auth";
+import { creerDemande } from "@/lib/demandes";
+import { ACCEPTE, televerser } from "@/lib/fichiers";
+import { useSession } from "@/lib/session";
+import { useApi } from "@/lib/useApi";
+import Image from "next/image";
+
+export const CRENEAUX = { matin: "Matin (8h – 12h)", aprem: "Après-midi (12h – 17h)", soir: "Soir (17h – 20h)", flex: "Flexible" };
 
 export default function NouvelleDemandeForm() {
+  const metiers = useMetiers();
   const params = useSearchParams();
   const tech = getTechnicien(params.get("technicien") ?? "");
   const root = useRef<HTMLDivElement>(null);
@@ -20,14 +31,22 @@ export default function NouvelleDemandeForm() {
   const [metier, setMetier] = useState<MetierId>(tech?.metier ?? "electricite");
   const [titre, setTitre] = useState("");
   const [description, setDescription] = useState("");
-  const [zone, setZone] = useState("Kaloum");
-  const [adresse, setAdresse] = useState(CLIENT_CONNECTE.adresse);
+  const session = useSession();
+  const [zone, setZone] = useState(apiActive ? (session?.utilisateur.zone?.nom ?? "Kaloum") : "Kaloum");
+  const [adresse, setAdresse] = useState(apiActive ? "" : CLIENT_CONNECTE.adresse);
   const [point, setPoint] = useState<Point | null>(null);
   const [date, setDate] = useState("");
+  const [creneau, setCreneau] = useState<keyof typeof CRENEAUX>("matin");
   const [urgent, setUrgent] = useState(false);
   const [budget, setBudget] = useState("");
   const [photos, setPhotos] = useState<string[]>([]);
   const [envoyee, setEnvoyee] = useState(false);
+  const [envoi, setEnvoi] = useState(false);
+  const [erreur, setErreur] = useState("");
+  const zones = useZonesApi(apiActive);
+  const [photoEnCours, setPhotoEnCours] = useState(false);
+  const adressesEnregistrees =
+    useApi<{ id: string; label: string; texte: string; zone: { nom: string } | null; lat: number | null; lng: number | null }[]>(apiActive ? "/moi/adresses" : null).donnees ?? [];
 
   useGSAP(
     () => {
@@ -53,8 +72,36 @@ export default function NouvelleDemandeForm() {
     { dependencies: [envoyee], scope: root },
   );
 
-  function envoyer(e: FormEvent) {
+  async function envoyer(e: FormEvent) {
     e.preventDefault();
+    if (apiActive) {
+      const zoneId = idZone(zones, zone);
+      if (!zoneId) return setErreur(`La zone ${zone} n'est pas encore desservie par GDC.`);
+      if (adresse.trim().length < 3) return setErreur("Indiquez l'adresse de l'intervention (quartier, rue, repère).");
+      setErreur("");
+      setEnvoi(true);
+      try {
+        await creerDemande({
+          metierId: metier,
+          titre: titre.trim(),
+          description: description.trim(),
+          zoneId,
+          adresse: adresse.trim(),
+          lat: point?.lat,
+          lng: point?.lng,
+          urgente: urgent,
+          dateSouhaitee: date || undefined,
+          creneau: CRENEAUX[creneau],
+          budget: budget ? Number(budget) : undefined,
+          photos,
+          technicienId: params.get("technicien") ?? undefined,
+        });
+      } catch (err) {
+        return setErreur(texteErreur(err));
+      } finally {
+        setEnvoi(false);
+      }
+    }
     setEnvoyee(true);
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
@@ -100,7 +147,7 @@ export default function NouvelleDemandeForm() {
           <Card className="p-6">
             <h2 className="mb-4 font-bold text-slate-900">1. Quel type de travaux ?</h2>
             <div className="grid grid-cols-4 gap-2 md:grid-cols-8">
-              {METIERS.map((m) => (
+              {metiers.map((m) => (
                 <button
                   key={m.id}
                   type="button"
@@ -122,6 +169,7 @@ export default function NouvelleDemandeForm() {
               <Field label="Description du besoin *" hint={`${description.length}/500 caractères`}>
                 <Textarea
                   required
+                  minLength={10}
                   maxLength={500}
                   value={description}
                   onChange={(e) => setDescription(e.target.value)}
@@ -133,25 +181,50 @@ export default function NouvelleDemandeForm() {
                 <div className="flex flex-wrap gap-3">
                   {photos.map((p) => (
                     <div key={p} className="relative flex size-20 items-center justify-center rounded-xl bg-gradient-to-br from-brand-100 to-accent-100 text-[10px] font-medium text-brand-700">
-                      {p}
+                      {/* Avec l'API, p est l'adresse de la photo envoyée ; en démonstration, son nom. */}
+                      {p.startsWith("http") ? (
+                        <span className="relative block size-full overflow-hidden rounded-xl">
+                          <Image src={p} alt="" fill unoptimized className="object-cover" />
+                        </span>
+                      ) : (
+                        p
+                      )}
                       <button type="button" onClick={() => setPhotos(photos.filter((x) => x !== p))} className="absolute -right-1.5 -top-1.5 rounded-full bg-slate-900 p-0.5 text-white" aria-label="Retirer">
                         <X className="size-3" />
                       </button>
                     </div>
                   ))}
-                  <label className="flex size-20 cursor-pointer flex-col items-center justify-center gap-1 rounded-xl border-2 border-dashed border-slate-300 text-xs text-slate-500 transition hover:border-brand-500 hover:text-brand-600">
-                    <Camera className="size-5" />
-                    Ajouter
-                    <input
-                      type="file"
-                      accept="image/*"
-                      className="sr-only"
-                      onChange={(e) => {
-                        const f = e.target.files?.[0];
-                        if (f) setPhotos([...photos, f.name.slice(0, 10)]);
-                      }}
-                    />
-                  </label>
+                  {photos.length < 6 && (
+                    <label
+                      className={cn(
+                        "flex size-20 cursor-pointer flex-col items-center justify-center gap-1 rounded-xl border-2 border-dashed border-slate-300 text-xs text-slate-500 transition hover:border-brand-500 hover:text-brand-600",
+                        photoEnCours && "pointer-events-none opacity-50",
+                      )}
+                    >
+                      <Camera className="size-5" />
+                      {photoEnCours ? "Envoi…" : "Ajouter"}
+                      <input
+                        type="file"
+                        accept={ACCEPTE.photo}
+                        className="sr-only"
+                        onChange={async (e) => {
+                          const f = e.target.files?.[0];
+                          e.target.value = "";
+                          if (!f) return;
+                          if (!apiActive) return setPhotos([...photos, f.name.slice(0, 10)]);
+                          setPhotoEnCours(true);
+                          try {
+                            const url = await televerser(f, "photo");
+                            setPhotos((l) => [...l, url]);
+                          } catch (err) {
+                            setErreur(texteErreur(err));
+                          } finally {
+                            setPhotoEnCours(false);
+                          }
+                        }}
+                      />
+                    </label>
+                  )}
                 </div>
               </div>
             </div>
@@ -171,14 +244,39 @@ export default function NouvelleDemandeForm() {
                 <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
               </Field>
               <Field label="Créneau">
-                <Select defaultValue="matin">
-                  <option value="matin">Matin (8h – 12h)</option>
-                  <option value="aprem">Après-midi (12h – 17h)</option>
-                  <option value="soir">Soir (17h – 20h)</option>
-                  <option value="flex">Flexible</option>
+                <Select value={creneau} onChange={(e) => setCreneau(e.target.value as keyof typeof CRENEAUX)}>
+                  {Object.entries(CRENEAUX).map(([id, label]) => (
+                    <option key={id} value={id}>
+                      {label}
+                    </option>
+                  ))}
                 </Select>
               </Field>
             </div>
+            {adressesEnregistrees.length > 0 && (
+              <div className="mt-5">
+                <p className="mb-2 text-sm font-semibold text-slate-700">Mes adresses</p>
+                <div className="flex flex-wrap gap-2">
+                  {adressesEnregistrees.map((a) => (
+                    <button
+                      key={a.id}
+                      type="button"
+                      onClick={() => {
+                        setAdresse(a.texte);
+                        if (a.zone) setZone(a.zone.nom);
+                        if (a.lat != null && a.lng != null) setPoint({ lat: a.lat, lng: a.lng });
+                      }}
+                      className={cn(
+                        "rounded-full border px-3 py-1.5 text-sm font-medium transition",
+                        adresse === a.texte ? "border-brand-600 bg-brand-50 text-brand-700" : "border-slate-300 text-slate-600 hover:border-brand-500",
+                      )}
+                    >
+                      {a.label} · {a.texte}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
             <div className="mt-5">
               <AdressePicker
                 zone={zone}
@@ -241,8 +339,9 @@ export default function NouvelleDemandeForm() {
               )}
             </ul>
             <p className="mt-4 line-clamp-3 min-h-10 rounded-xl bg-slate-50 p-3 text-xs text-slate-500">{titre || description || "Votre description apparaîtra ici."}</p>
-            <Button type="submit" size="lg" className="mt-5 w-full">
-              <Send className="size-4" /> Envoyer la demande
+            {erreur && <p className="mt-4 text-sm font-medium text-red-600">{erreur}</p>}
+            <Button type="submit" size="lg" className="mt-5 w-full" disabled={envoi}>
+              <Send className="size-4" /> {envoi ? "Envoi…" : "Envoyer la demande"}
             </Button>
             <p className="mt-3 flex items-start gap-2 text-xs text-slate-500">
               <CheckCircle2 className="size-4 shrink-0 text-emerald-500" /> Gratuit et sans engagement. Seuls des professionnels vérifiés reçoivent votre demande.

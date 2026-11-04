@@ -7,7 +7,10 @@ import Reveal from "@/components/motion/Reveal";
 import { toast } from "@/components/motion/Toaster";
 import { Avatar, Badge, Button, Card, EmptyState, PageHeader, Stars, type Tone } from "@/components/ui";
 import { Tabs } from "@/components/ui/interactive";
-import { AVIS_MODERATION, getTechnicien, type StatutAvis } from "@/lib/data";
+import { dateCourte, type Page } from "@/lib/admin";
+import { api, apiActive, texteErreur } from "@/lib/api";
+import { AVIS_MODERATION, getTechnicien, type AvisModeration, type StatutAvis } from "@/lib/data";
+import { useApi } from "@/lib/useApi";
 
 const STATUTS: Record<StatutAvis, [Tone, string]> = {
   publie: ["green", "Publié"],
@@ -17,20 +20,74 @@ const STATUTS: Record<StatutAvis, [Tone, string]> = {
 
 type Filtre = "tous" | StatutAvis | "signales";
 
+interface AvisApi {
+  id: string;
+  note: number;
+  commentaire: string | null;
+  statut: "PUBLIE" | "EN_ATTENTE" | "MASQUE";
+  signale: boolean;
+  createdAt: string;
+  auteur: { prenom: string; nom: string };
+  technicien: { id: string; user: { prenom: string; nom: string } };
+  demande: { titre: string; numero: number };
+}
+
+/** Avis au format de l'écran (`technicien` : nom affiché). */
+type Ligne = AvisModeration & { technicien: string; mission?: string };
+
 export default function ModerationAvis() {
-  const [avis, setAvis] = useState(AVIS_MODERATION);
+  const distants = useApi<Page<AvisApi>>(apiActive ? "/admin/avis" : null);
+  const [locaux, setLocaux] = useState<Ligne[]>(AVIS_MODERATION.map((a) => ({ ...a, technicien: getTechnicien(a.technicienId)!.nom })));
+  // Avis supprimés pendant l'animation de sortie (API).
+  const [retires, setRetires] = useState<string[]>([]);
+  const avis: Ligne[] = apiActive
+    ? (distants.donnees?.resultats ?? [])
+        .filter((a) => !retires.includes(a.id))
+        .map((a) => ({
+          id: a.id,
+          auteur: `${a.auteur.prenom} ${a.auteur.nom}`,
+          technicienId: a.technicien.id,
+          technicien: `${a.technicien.user.prenom} ${a.technicien.user.nom}`,
+          mission: `#${a.demande.numero} ${a.demande.titre}`,
+          note: a.note,
+          texte: a.commentaire ?? "(sans commentaire)",
+          date: dateCourte(a.createdAt),
+          statut: a.statut.toLowerCase() as StatutAvis,
+          signale: a.signale,
+        }))
+    : locaux;
   const [filtre, setFiltre] = useState<Filtre>("en_attente");
   const ref = useRef<HTMLDivElement>(null);
   const { contextSafe } = useGSAP({ scope: ref });
 
   const liste = avis.filter((a) => (filtre === "tous" ? true : filtre === "signales" ? a.signale : a.statut === filtre));
 
-  const changer = (id: string, statut: StatutAvis) => {
-    setAvis(avis.map((a) => (a.id === id ? { ...a, statut, signale: statut === "publie" ? false : a.signale } : a)));
-    toast(statut === "publie" ? "Avis approuvé et publié" : "Avis masqué", statut === "publie" ? "success" : "info");
-  };
+  async function changer(id: string, statut: StatutAvis) {
+    if (apiActive) {
+      try {
+        await api(`/admin/avis/${id}`, { methode: "PATCH", corps: { statut: statut.toUpperCase() } });
+        distants.recharger();
+      } catch (e) {
+        return toast(texteErreur(e), "error");
+      }
+    } else {
+      setLocaux(locaux.map((a) => (a.id === id ? { ...a, statut, signale: statut === "publie" ? false : a.signale } : a)));
+    }
+    toast(statut === "publie" ? "Avis approuvé et publié : la note du technicien est mise à jour" : "Avis masqué", statut === "publie" ? "success" : "info");
+  }
 
-  const supprimer = contextSafe((id: string) => {
+  async function supprimer(id: string) {
+    if (apiActive) {
+      try {
+        await api(`/admin/avis/${id}`, { methode: "DELETE" });
+      } catch (e) {
+        return toast(texteErreur(e), "error");
+      }
+    }
+    animerSuppression(id);
+  }
+
+  const animerSuppression = contextSafe((id: string) => {
     gsap.to(`[data-avis="${id}"]`, {
       height: 0,
       autoAlpha: 0,
@@ -40,7 +97,8 @@ export default function ModerationAvis() {
       duration: 0.4,
       ease: "power2.inOut",
       onComplete: () => {
-        setAvis((prev) => prev.filter((a) => a.id !== id));
+        if (apiActive) setRetires((r) => [...r, id]);
+        else setLocaux((prev) => prev.filter((a) => a.id !== id));
         toast("Avis supprimé", "info");
       },
     });
@@ -63,12 +121,15 @@ export default function ModerationAvis() {
         />
         {liste.length === 0 ? (
           <div className="mt-5">
-            <EmptyState icon={MessageSquareText} title="Rien à modérer" text="Tous les avis de cette catégorie ont été traités. 🎉" />
+            <EmptyState
+              icon={MessageSquareText}
+              title={distants.chargement ? "Chargement…" : "Rien à modérer"}
+              text={filtre === "en_attente" ? "Les avis de 1 et 2 étoiles attendent ici votre validation avant publication." : "Tous les avis de cette catégorie ont été traités."}
+            />
           </div>
         ) : (
           <Reveal className="mt-5 space-y-3" deps={[filtre]} y={14} stagger={0.06}>
             {liste.map((a) => {
-              const t = getTechnicien(a.technicienId)!;
               return (
                 <div key={a.id} data-avis={a.id} className="overflow-hidden rounded-2xl border border-slate-200 p-5">
                   <div className="flex flex-col gap-4 md:flex-row md:items-start">
@@ -77,7 +138,7 @@ export default function ModerationAvis() {
                       <div className="flex flex-wrap items-center gap-2">
                         <p className="font-bold text-slate-900">{a.auteur}</p>
                         <span className="text-sm text-slate-400">→</span>
-                        <p className="text-sm font-semibold text-brand-700">{t.nom}</p>
+                        <p className="text-sm font-semibold text-brand-700">{a.technicien}</p>
                         <Badge tone={STATUTS[a.statut][0]} dot>
                           {STATUTS[a.statut][1]}
                         </Badge>
@@ -89,7 +150,10 @@ export default function ModerationAvis() {
                       </div>
                       <div className="mt-1 flex items-center gap-2">
                         <Stars note={a.note} className="size-3.5" />
-                        <span className="text-xs text-slate-400">{a.date}</span>
+                        <span className="text-xs text-slate-400">
+                          {a.date}
+                          {a.mission && ` · ${a.mission}`}
+                        </span>
                       </div>
                       <p className="mt-2 rounded-xl bg-slate-50 p-3 text-sm text-slate-700">« {a.texte} »</p>
                     </div>

@@ -1,15 +1,18 @@
 "use client";
 
-import { ArrowLeft, ArrowRight, Building2, ClipboardList, ShieldCheck, Smartphone, User, Wrench } from "lucide-react";
+import { ArrowRight, Building2, ClipboardList, Smartphone, User, Wrench } from "lucide-react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useRef, useState, type FormEvent } from "react";
+import EtapeCode, { annoncerCode } from "@/components/auth/EtapeCode";
 import { enter, prefersReducedMotion, useGSAP } from "@/components/motion/gsap";
 import { toast } from "@/components/motion/Toaster";
-import { Button, cn, inputClass } from "@/components/ui";
+import { Button, cn, inputClass, LinkButton } from "@/components/ui";
 import GoogleConnexion, { googleConfigure } from "@/components/ui/GoogleConnexion";
-import OtpInput from "@/components/ui/OtpInput";
-import { cheminRetour } from "@/lib/redirect";
+import { apiActive, texteErreur } from "@/lib/api";
+import { connexionGoogle, demanderCode, sansCompte, verifierCode } from "@/lib/auth";
+import { cheminRetour, retourDemande } from "@/lib/redirect";
+import { ESPACE_ROLE, memoriserNumeroVerifie, type RoleApi } from "@/lib/session";
 
 type Etape = "telephone" | "code" | "espace";
 
@@ -28,9 +31,11 @@ export default function ConnexionForm() {
   const ref = useRef<HTMLDivElement>(null);
   const [etape, setEtape] = useState<Etape>("telephone");
   const [telephone, setTelephone] = useState("");
-  const [code, setCode] = useState("");
   const [erreur, setErreur] = useState("");
-  const [compteur, setCompteur] = useState(0);
+  const [envoi, setEnvoi] = useState(false);
+  const [codeTest, setCodeTest] = useState<string>();
+  // Numéro saisi qui n'a pas de compte (affiché tant que le numéro n'est pas modifié).
+  const [numeroInconnu, setNumeroInconnu] = useState<string | null>(null);
 
   // Transition entre les étapes : la nouvelle étape glisse depuis la droite.
   useGSAP(
@@ -42,45 +47,69 @@ export default function ConnexionForm() {
   );
 
   const telNettoye = telephone.replace(/\D/g, "");
+  const inconnu = numeroInconnu !== null && numeroInconnu === telNettoye;
+  /** Lien d'inscription qui reprend le numéro saisi (et l'action en cours). */
+  const lienInscription = (type: "client" | "technicien") =>
+    `/inscription/${type}?telephone=${telNettoye}${redirect && type === "client" ? `&redirect=${encodeURIComponent(redirect)}` : ""}`;
 
-  function envoyerCode(e: FormEvent) {
+  /** Après connexion : retour à l'action en cours (ex. envoi d'une demande), sinon l'espace du rôle. */
+  function entrer(role: RoleApi) {
+    router.push(redirect ?? ESPACE_ROLE[role]);
+  }
+
+  async function envoyerCode(e: FormEvent) {
     e.preventDefault();
     if (!TEL_REGEX.test(telNettoye)) {
       setErreur("Entrez un numéro mobile valide à 9 chiffres (ex. 620 12 34 56).");
       return;
     }
     setErreur("");
-    setEtape("code");
-    lancerCompteur();
-    toast("Code envoyé par SMS au +224 " + telephone, "info");
-  }
-
-  // Délai de 30 s avant de pouvoir redemander un code.
-  function lancerCompteur() {
-    setCompteur(30);
-    const timer = setInterval(() => {
-      setCompteur((c) => {
-        if (c <= 1) clearInterval(timer);
-        return c - 1;
-      });
-    }, 1000);
-  }
-
-  function verifierCode(e: FormEvent) {
-    e.preventDefault();
-    if (code.length !== 6) {
-      setErreur("Le code contient 6 chiffres.");
-      return;
+    if (!apiActive) {
+      setEtape("code");
+      return toast("Code envoyé par SMS au +224 " + telephone, "info");
     }
-    setErreur("");
-    // Connexion demandée pour finaliser une action (ex. envoi d’une demande) : on y retourne directement.
-    if (redirect) return router.push(redirect);
-    setEtape("espace");
+    setEnvoi(true);
+    try {
+      const { codeDev } = await demanderCode(telNettoye, "connexion");
+      setCodeTest(codeDev);
+      setEtape("code");
+      annoncerCode(telephone, codeDev);
+    } catch (err) {
+      // Numéro sans compte : aucun code envoyé, on propose directement l'inscription.
+      if (sansCompte(err)) setNumeroInconnu(telNettoye);
+      else setErreur(texteErreur(err));
+    } finally {
+      setEnvoi(false);
+    }
+  }
+
+  async function renvoyer() {
+    if (!apiActive) return toast("Nouveau code envoyé par SMS", "info");
+    const { codeDev } = await demanderCode(telNettoye, "connexion");
+    setCodeTest(codeDev);
+    annoncerCode(telephone, codeDev);
+  }
+
+  async function valider(code: string) {
+    if (!apiActive) {
+      // Démonstration : tout code à 6 chiffres est accepté.
+      if (redirect) return router.push(redirect);
+      return setEtape("espace");
+    }
+    const res = await verifierCode(telNettoye, code);
+    if (res.inscriptionRequise) {
+      // Numéro vérifié mais sans compte : l'inscription reprend ce numéro sans redemander de code.
+      memoriserNumeroVerifie(telNettoye, res.jetonInscription);
+      toast("Ce numéro n'a pas encore de compte GDC. Créez-le en une minute.", "info");
+      return router.push(redirect ? `/inscription?redirect=${encodeURIComponent(redirect)}` : "/inscription");
+    }
+    toast(`Bienvenue, ${res.utilisateur.prenom} !`);
+    entrer(res.utilisateur.role);
   }
 
   return (
     <div ref={ref}>
-      {redirect && (
+      {retourDemande(redirect) && (
         <div className="mb-6 flex items-start gap-3 rounded-2xl bg-accent-50 p-4 text-sm text-accent-700 ring-1 ring-accent-100">
           <ClipboardList className="mt-0.5 size-5 shrink-0" />
           <p>
@@ -125,8 +154,33 @@ export default function ConnexionForm() {
             </div>
           </label>
           {erreur && <p className="text-sm font-medium text-red-600">{erreur}</p>}
-          <Button type="submit" size="lg" className="w-full">
-            Recevoir le code <ArrowRight className="size-4" />
+          {inconnu && (
+            <div className="step-panel space-y-3 rounded-2xl bg-accent-50 p-4 ring-1 ring-accent-100">
+              <p className="text-sm text-slate-700">
+                <strong className="text-slate-900">Le +224 {telephone} n&apos;a pas encore de compte GDC.</strong> Aucun code ne vous a été envoyé :
+                créez votre compte, c&apos;est gratuit et rapide.
+              </p>
+              <div className="grid gap-2 sm:grid-cols-2">
+                <LinkButton href={lienInscription("client")} size="sm" className="w-full">
+                  <User className="size-4" /> Je suis client
+                </LinkButton>
+                <LinkButton href={lienInscription("technicien")} size="sm" variant="outline" className="w-full">
+                  <Wrench className="size-4" /> Je suis technicien
+                </LinkButton>
+              </div>
+              <p className="text-xs text-slate-500">Ce n&apos;est pas votre numéro ? Corrigez-le ci-dessus.</p>
+            </div>
+          )}
+          <Button type="submit" size="lg" className="w-full" disabled={envoi}>
+            {envoi ? (
+              <>
+                <span className="size-4 animate-spin rounded-full border-2 border-white/40 border-t-white" /> Envoi du code…
+              </>
+            ) : (
+              <>
+                Recevoir le code <ArrowRight className="size-4" />
+              </>
+            )}
           </Button>
           {googleConfigure && (
             <>
@@ -134,11 +188,19 @@ export default function ConnexionForm() {
                 <span className="h-px flex-1 bg-slate-200" /> ou <span className="h-px flex-1 bg-slate-200" />
               </div>
               <GoogleConnexion
-                onConnexion={(profil) => {
-                  // TODO : envoyer profil.jeton à l'API, qui vérifie la signature Google et ouvre la session.
-                  toast(`Connecté en tant que ${profil.nom}`);
-                  if (redirect) return router.push(redirect);
-                  setEtape("espace");
+                onConnexion={async (profil) => {
+                  if (!apiActive) {
+                    toast(`Connecté en tant que ${profil.nom}`);
+                    if (redirect) return router.push(redirect);
+                    return setEtape("espace");
+                  }
+                  try {
+                    const res = await connexionGoogle(profil.jeton);
+                    toast(`Bienvenue, ${res.utilisateur.prenom} !`);
+                    entrer(res.utilisateur.role);
+                  } catch (err) {
+                    setErreur(texteErreur(err));
+                  }
                 }}
               />
             </>
@@ -152,44 +214,7 @@ export default function ConnexionForm() {
         </form>
       )}
 
-      {etape === "code" && (
-        <form onSubmit={verifierCode} className="step-panel space-y-6">
-          <div>
-            <span className="inline-flex rounded-2xl bg-brand-50 p-3 text-brand-600">
-              <ShieldCheck className="size-6" />
-            </span>
-            <h1 className="mt-4 text-3xl font-extrabold tracking-tight text-brand-950">Vérification</h1>
-            <p className="mt-2 text-slate-500">
-              Saisissez le code à 6 chiffres envoyé au <strong className="text-slate-800">+224 {telephone}</strong>.
-            </p>
-          </div>
-          <OtpInput value={code} onChange={setCode} error={!!erreur} />
-          {erreur && <p className="text-sm font-medium text-red-600">{erreur}</p>}
-          <Button type="submit" size="lg" className="w-full" disabled={code.length !== 6}>
-            Valider
-          </Button>
-          <div className="flex items-center justify-between text-sm">
-            <button
-              type="button"
-              onClick={() => {
-                setEtape("telephone");
-                setCode("");
-                setErreur("");
-              }}
-              className="inline-flex items-center gap-1 font-semibold text-slate-500 hover:text-brand-600"
-            >
-              <ArrowLeft className="size-4" /> Modifier le numéro
-            </button>
-            <button type="button" disabled={compteur > 0} onClick={() => {
-                setCode("");
-                lancerCompteur();
-                toast("Nouveau code envoyé par SMS", "info");
-              }} className="font-semibold text-brand-600 disabled:text-slate-400">
-              {compteur > 0 ? `Renvoyer (${compteur}s)` : "Renvoyer le code"}
-            </button>
-          </div>
-        </form>
-      )}
+      {etape === "code" && <EtapeCode telephone={telephone} onValider={valider} onRenvoyer={renvoyer} onRetour={() => setEtape("telephone")} codeTest={codeTest} />}
 
       {etape === "espace" && (
         <div className="step-panel space-y-4">

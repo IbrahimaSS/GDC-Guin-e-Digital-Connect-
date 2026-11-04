@@ -1,4 +1,5 @@
 import Link from "next/link";
+import BandeauMaintenance from "@/components/layout/BandeauMaintenance";
 import AuthVisual from "@/components/layout/AuthVisual";
 import PageTransition from "@/components/motion/PageTransition";
 import { Logo } from "@/components/ui";
@@ -7,6 +8,7 @@ export default function AuthLayout({ children }: LayoutProps<"/">) {
   return (
     <div className="grid min-h-screen bg-white lg:grid-cols-[1fr_1.05fr]">
       <div className="flex flex-col px-5 py-6 sm:px-10">
+        <BandeauMaintenance />
         <div className="flex items-center justify-between">
           <Link href="/" aria-label="Accueil GDC">
             <Logo />

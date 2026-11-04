@@ -7,21 +7,124 @@ import { Badge, Button, Card, cn, EmptyState, Textarea } from "@/components/ui";
 import { Toggle } from "@/components/ui/interactive";
 import { Table, Td, Th } from "@/components/ui/table";
 import { CLE_JOURNAL, CLE_MODELES, MODELES, notifier, type Canal, type Envoi, type Evenement, type Modele } from "@/lib/notifier";
+import { api, apiActive, texteErreur } from "@/lib/api";
 import { usePersistant } from "@/lib/stockage";
+import { useApi } from "@/lib/useApi";
 
 const AUCUN: Envoi[] = [];
 const PERSO: Partial<Record<Evenement, Partial<Modele>>> = {};
 const EXEMPLE = { client: "Mohamed Camara", technicien: "Mamadou Diallo", mission: "Réparation de climatisation", montant: "350 000 GNF", code: "4821" };
 const apercu = (t: string) => t.replace(/\{(\w+)\}/g, (_, k: keyof typeof EXEMPLE) => EXEMPLE[k] ?? "");
 
+interface ModeleApi {
+  evenement: Evenement;
+  canaux: Canal[];
+  texte: string;
+  personnalise: boolean;
+}
+
+interface EnvoiApi {
+  id: string;
+  evenement: string;
+  canal: Canal;
+  numero: string;
+  texte: string;
+  statut: string;
+  createdAt: string;
+}
+
+/**
+ * Modèles et journal : enregistrés sur le serveur avec l'API (les modifications partent avec
+ * « Enregistrer »), dans le navigateur en démonstration.
+ */
+function useModeles() {
+  const [persoLocal, setPersoLocal] = usePersistant(CLE_MODELES, PERSO);
+  const [journalLocal, setJournalLocal] = usePersistant(CLE_JOURNAL, AUCUN);
+  const modelesApi = useApi<ModeleApi[]>(apiActive ? "/admin/notifications/modeles" : null);
+  const journalApi = useApi<EnvoiApi[]>(apiActive ? "/admin/notifications/journal" : null);
+  // Modifications en cours, pas encore enregistrées (API).
+  const [brouillons, setBrouillons] = useState<Partial<Record<Evenement, Partial<Modele>>>>({});
+
+  if (!apiActive) {
+    return {
+      perso: persoLocal,
+      setPerso: setPersoLocal,
+      journal: journalLocal.map((e) => ({ id: e.id, date: e.date, canal: e.canal, destinataire: e.destinataire as string, numero: e.numero, texte: e.texte, statut: "envoye" })),
+      viderJournal: () => setJournalLocal([]),
+      nonEnregistre: () => false,
+      async enregistrer() {},
+      async reinitialiser(e: Evenement) {
+        setPersoLocal((p) => {
+          const { [e]: _retire, ...reste } = p;
+          void _retire;
+          return reste;
+        });
+      },
+      async tester(e: Evenement) {
+        notifier(e, { ...EXEMPLE, numero: "+224 620 00 00 00" });
+        return "+224 620 00 00 00";
+      },
+    };
+  }
+  const serveur = Object.fromEntries(
+    (modelesApi.donnees ?? []).filter((m) => m.personnalise).map((m) => [m.evenement, { canaux: m.canaux, texte: m.texte }]),
+  ) as Partial<Record<Evenement, Partial<Modele>>>;
+  const perso = { ...serveur, ...Object.fromEntries(Object.entries(brouillons).map(([e, b]) => [e, { ...serveur[e as Evenement], ...b }])) };
+  return {
+    perso,
+    setPerso: (f: (p: typeof perso) => typeof perso) => {
+      const suivant = f(perso);
+      setBrouillons(Object.fromEntries(Object.entries(suivant).filter(([e, m]) => JSON.stringify(m) !== JSON.stringify(serveur[e as Evenement]))));
+    },
+    journal: (journalApi.donnees ?? []).map((e) => ({
+      id: e.id,
+      date: new Date(e.createdAt).toLocaleString("fr-FR", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }),
+      canal: e.canal,
+      destinataire: e.evenement.startsWith("test:") ? "test" : (MODELES[e.evenement as Evenement]?.destinataire ?? ""),
+      numero: e.numero.replace(/^\+224(\d{3})(\d{2})(\d{2})(\d{2})$/, "+224 $1 $2 $3 $4"),
+      texte: e.texte,
+      statut: e.statut,
+    })),
+    viderJournal: undefined,
+    nonEnregistre: (e: Evenement) => Boolean(brouillons[e]),
+    async enregistrer(e: Evenement, m: Modele) {
+      await api(`/admin/notifications/modeles/${e}`, { methode: "PUT", corps: { canaux: m.canaux, texte: m.texte } });
+      setBrouillons(({ [e]: _fait, ...reste }) => (void _fait, reste));
+      modelesApi.recharger();
+    },
+    async reinitialiser(e: Evenement) {
+      await api(`/admin/notifications/modeles/${e}`, { methode: "DELETE" });
+      setBrouillons(({ [e]: _fait, ...reste }) => (void _fait, reste));
+      modelesApi.recharger();
+    },
+    async tester(e: Evenement) {
+      const r = await api<{ numero: string }>(`/admin/notifications/modeles/${e}/test`, { methode: "POST" });
+      journalApi.recharger();
+      return r.numero;
+    },
+  };
+}
+
 /** Back-office : modèles des SMS / WhatsApp envoyés à chaque étape et journal des envois. */
 export default function ModelesNotifications() {
-  const [perso, setPerso] = usePersistant(CLE_MODELES, PERSO);
-  const [journal, setJournal] = usePersistant(CLE_JOURNAL, AUCUN);
+  const { perso, setPerso, journal, viderJournal, nonEnregistre, enregistrer, reinitialiser, tester } = useModeles();
   const [choix, setChoix] = useState<Evenement>("demande_acceptee");
+  const [envoi, setEnvoi] = useState(false);
   const modele: Modele = { ...MODELES[choix], ...perso[choix] };
 
   const maj = (patch: Partial<Modele>) => setPerso((p) => ({ ...p, [choix]: { ...p[choix], ...patch } }));
+
+  async function executer(action: () => Promise<unknown>, succes: string) {
+    setEnvoi(true);
+    try {
+      await action();
+      toast(succes);
+    } catch (e) {
+      toast(texteErreur(e), "error");
+    } finally {
+      setEnvoi(false);
+    }
+  }
   const basculerCanal = (c: Canal, actif: boolean) => maj({ canaux: actif ? Array.from(new Set([...modele.canaux, c])) : modele.canaux.filter((x) => x !== c) });
 
   return (
@@ -74,26 +177,34 @@ export default function ModelesNotifications() {
           </span>
         </label>
         <div className="flex flex-wrap gap-2">
+          {apiActive && (
+            <Button
+              disabled={envoi || !nonEnregistre(choix) || !modele.texte.trim()}
+              onClick={() => executer(() => enregistrer(choix, modele), "Modèle enregistré : il s'applique aux prochains envois.")}
+            >
+              Enregistrer
+            </Button>
+          )}
           <Button
             variant="outline"
-            onClick={() => {
-              notifier(choix, { ...EXEMPLE, numero: "+224 620 00 00 00" });
-              toast("Message de test envoyé au +224 620 00 00 00");
+            disabled={envoi || nonEnregistre(choix)}
+            title={nonEnregistre(choix) ? "Enregistrez d'abord le modèle." : undefined}
+            onClick={async () => {
+              setEnvoi(true);
+              try {
+                const numero = await tester(choix);
+                toast(`Message de test envoyé au ${numero.replace(/^\+224(\d{3})(\d{2})(\d{2})(\d{2})$/, "+224 $1 $2 $3 $4")}`);
+              } catch (e) {
+                toast(texteErreur(e), "error");
+              } finally {
+                setEnvoi(false);
+              }
             }}
           >
             <Send className="size-4" /> Envoyer un test
           </Button>
           {perso[choix] && (
-            <Button
-              variant="ghost"
-              onClick={() =>
-                setPerso((p) => {
-                  const { [choix]: _retire, ...reste } = p;
-                  void _retire;
-                  return reste;
-                })
-              }
-            >
+            <Button variant="ghost" disabled={envoi} onClick={() => executer(() => reinitialiser(choix), "Texte d'origine rétabli")}>
               <RotateCcw className="size-4" /> Texte d&apos;origine
             </Button>
           )}
@@ -123,8 +234,8 @@ export default function ModelesNotifications() {
             <h2 className="font-bold text-slate-900">Journal des envois</h2>
             <p className="text-sm text-slate-500">SMS et WhatsApp envoyés par la plateforme.</p>
           </div>
-          {journal.length > 0 && (
-            <Button variant="ghost" size="sm" onClick={() => setJournal([])}>
+          {journal.length > 0 && viderJournal && (
+            <Button variant="ghost" size="sm" onClick={viderJournal}>
               Vider
             </Button>
           )}
@@ -158,8 +269,8 @@ export default function ModelesNotifications() {
                     </Td>
                     <Td className="max-w-md text-slate-600">{e.texte}</Td>
                     <Td>
-                      <Badge tone="green" dot>
-                        Envoyé
+                      <Badge tone={e.statut === "echec" ? "red" : "green"} dot>
+                        {e.statut === "echec" ? "Échec" : "Envoyé"}
                       </Badge>
                     </Td>
                   </tr>

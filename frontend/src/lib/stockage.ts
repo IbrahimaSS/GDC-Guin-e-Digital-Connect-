@@ -10,7 +10,7 @@ const PREFIXE = "gdc:";
 const EVENEMENT = "gdc:stockage";
 const cache = new Map<string, unknown>();
 
-function lire<T>(cle: string, initial: T): T {
+export function lire<T>(cle: string, initial: T): T {
   if (cache.has(cle)) return cache.get(cle) as T;
   let valeur = initial;
   try {

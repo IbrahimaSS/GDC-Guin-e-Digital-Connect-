@@ -8,14 +8,40 @@ import Reveal from "@/components/motion/Reveal";
 import { toast } from "@/components/motion/Toaster";
 import { Button, Field, Input, PageHeader, Select } from "@/components/ui";
 import { Modal, Tabs } from "@/components/ui/interactive";
+import { api, apiActive, texteErreur } from "@/lib/api";
 import { TECHNICIEN_CONNECTE as moi } from "@/lib/data";
+import { ACCEPTE, televerser, verifierFichier } from "@/lib/fichiers";
+import { useMonProfil, type RealisationApi } from "@/lib/monProfil";
+
+interface Element {
+  id: string;
+  titre: string;
+  categorie: string;
+  image: string;
+  date: string;
+}
+
+const DEMO: Element[] = moi.realisations.map((r, i) => ({ ...r, id: String(i), date: ["oct. 2026", "sept. 2026", "août 2026", "juil. 2026", "juin 2026", "mai 2026"][i] }));
 
 export default function PortfolioView() {
-  const [items, setItems] = useState(moi.realisations.map((r, i) => ({ ...r, id: i, date: ["oct. 2026", "sept. 2026", "août 2026", "juil. 2026", "juin 2026", "mai 2026"][i] })));
+  const profil = useMonProfil();
+  if (!apiActive) return <Portfolio initial={DEMO} metier="Installation" />;
+  if (!profil.donnees) return <div className="h-96 animate-pulse rounded-2xl bg-slate-100" aria-busy="true" />;
+  const initial = profil.donnees.realisations
+    .toSorted((a, b) => b.createdAt.localeCompare(a.createdAt))
+    .map((r) => ({ id: r.id, titre: r.titre, categorie: r.categorie, image: r.imageUrl, date: new Date(r.createdAt).toLocaleDateString("fr-FR", { month: "short", year: "numeric" }) }));
+  return <Portfolio initial={initial} metier={profil.donnees.metier.label} />;
+}
+
+function Portfolio({ initial, metier }: { initial: Element[]; metier: string }) {
+  const [items, setItems] = useState(initial);
+  // Fichier choisi dans la fenêtre d'ajout (envoyé au serveur à l'enregistrement).
+  const [fichier, setFichier] = useState<File | null>(null);
+  const [envoi, setEnvoi] = useState(false);
   const [filtre, setFiltre] = useState("Toutes");
   const [ajout, setAjout] = useState(false);
   // Réalisation en cours de modification (null = ajout).
-  const [edition, setEdition] = useState<(typeof items)[number] | null>(null);
+  const [edition, setEdition] = useState<Element | null>(null);
   const [apercu, setApercu] = useState<string | null>(null);
   const grid = useRef<HTMLDivElement>(null);
   const { contextSafe } = useGSAP({ scope: grid });
@@ -23,7 +49,7 @@ export default function PortfolioView() {
   const categories = ["Toutes", ...Array.from(new Set(items.map((i) => i.categorie)))];
   const visibles = items.filter((i) => filtre === "Toutes" || i.categorie === filtre);
 
-  const supprimer = contextSafe((id: number) => {
+  const retirer = contextSafe((id: string) => {
     gsap.to(`[data-item="${id}"]`, {
       scale: 0.6,
       autoAlpha: 0,
@@ -37,26 +63,59 @@ export default function PortfolioView() {
     });
   });
 
-  const ouvrir = (item: (typeof items)[number] | null) => {
+  async function supprimer(id: string) {
+    if (apiActive) {
+      try {
+        await api(`/techniciens/moi/realisations/${id}`, { methode: "DELETE" });
+      } catch (e) {
+        return toast(texteErreur(e), "error");
+      }
+    }
+    retirer(id);
+  }
+
+  const ouvrir = (item: Element | null) => {
     setEdition(item);
     setApercu(null);
+    setFichier(null);
     setAjout(true);
   };
 
-  function enregistrer(e: FormEvent<HTMLFormElement>) {
+  async function enregistrer(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     const data = new FormData(e.currentTarget);
     const titre = String(data.get("titre")).trim();
     const categorie = String(data.get("categorie"));
-    if (edition) {
+    if (apiActive) {
+      if (!edition && !fichier) return toast("Ajoutez une photo de la réalisation.", "error");
+      setEnvoi(true);
+      try {
+        const imageUrl = fichier ? await televerser(fichier, "photo") : undefined;
+        if (edition) {
+          const r = await api<RealisationApi>(`/techniciens/moi/realisations/${edition.id}`, { methode: "PATCH", corps: { titre, categorie, imageUrl } });
+          setItems(items.map((i) => (i.id === edition.id ? { ...i, titre: r.titre, categorie: r.categorie, image: r.imageUrl } : i)));
+        } else {
+          const r = await api<RealisationApi>("/techniciens/moi/realisations", { methode: "POST", corps: { titre, categorie, imageUrl } });
+          const date = new Date(r.createdAt).toLocaleDateString("fr-FR", { month: "short", year: "numeric" });
+          setItems([{ id: r.id, titre: r.titre, categorie: r.categorie, image: r.imageUrl, date }, ...items]);
+          setFiltre("Toutes");
+        }
+      } catch (err) {
+        return toast(texteErreur(err), "error");
+      } finally {
+        setEnvoi(false);
+      }
+      toast(edition ? "Réalisation modifiée" : "Réalisation ajoutée au portfolio");
+    } else if (edition) {
       setItems(items.map((i) => (i.id === edition.id ? { ...i, titre, categorie, image: apercu ?? i.image } : i)));
       toast("Réalisation modifiée");
     } else {
-      setItems([{ id: Date.now(), titre, categorie, image: apercu ?? "/images/electricien-tableau.jpg", date: "oct. 2026" }, ...items]);
+      setItems([{ id: String(Date.now()), titre, categorie, image: apercu ?? "/images/electricien-tableau.jpg", date: "oct. 2026" }, ...items]);
       setFiltre("Toutes");
       toast("Réalisation ajoutée au portfolio");
     }
     setApercu(null);
+    setFichier(null);
     setAjout(false);
   }
 
@@ -64,7 +123,7 @@ export default function PortfolioView() {
     <>
       <PageHeader
         title="Mes réalisations"
-        subtitle={`${items.length} réalisations · les profils avec au moins 6 photos sont 2 fois plus contactés.`}
+        subtitle={`${items.length} réalisation${items.length > 1 ? "s" : ""} · montrez vos meilleurs travaux : les clients les regardent avant de vous contacter.`}
         actions={
           <Button onClick={() => ouvrir(null)}>
             <ImagePlus className="size-4" /> Ajouter une réalisation
@@ -83,7 +142,7 @@ export default function PortfolioView() {
                   alt={r.titre}
                   fill
                   sizes="(min-width: 1280px) 25vw, 50vw"
-                  unoptimized={r.image.startsWith("blob:")}
+                  unoptimized={!r.image.startsWith("/")}
                   className="object-cover transition duration-500 group-hover:scale-110"
                 />
               </div>
@@ -118,21 +177,34 @@ export default function PortfolioView() {
           <label className="flex cursor-pointer flex-col items-center gap-2 rounded-2xl border-2 border-dashed border-slate-300 p-6 text-center text-slate-500 hover:border-brand-500">
             {apercu || edition ? (
               <span className="relative block h-28 w-full overflow-hidden rounded-xl">
-                <Image src={apercu ?? edition!.image} alt="" fill unoptimized={!!apercu} sizes="400px" className="object-cover" />
+                <Image src={apercu ?? edition!.image} alt="" fill unoptimized={!(apercu ?? edition!.image).startsWith("/")} sizes="400px" className="object-cover" />
               </span>
             ) : (
               <ImagePlus className="size-8 text-brand-600" />
             )}
             <span className="text-sm font-semibold">{edition ? "Changer la photo" : "Glissez vos photos ou cliquez"}</span>
-            <span className="text-xs">JPG ou PNG, 5 Mo max.</span>
-            <input type="file" accept="image/*" className="sr-only" onChange={(e) => e.target.files?.[0] && setApercu(URL.createObjectURL(e.target.files[0]))} />
+            <span className="text-xs">JPG, PNG ou WebP, 5 Mo max.</span>
+            <input
+              type="file"
+              accept={ACCEPTE.photo}
+              className="sr-only"
+              onChange={(e) => {
+                const f = e.target.files?.[0];
+                e.target.value = "";
+                if (!f) return;
+                const probleme = verifierFichier(f, "photo");
+                if (probleme) return toast(probleme, "error");
+                setFichier(f);
+                setApercu(URL.createObjectURL(f));
+              }}
+            />
           </label>
           <Field label="Titre *">
             <Input name="titre" required defaultValue={edition?.titre} placeholder="Ex. : Câblage d'une villa" />
           </Field>
           <Field label="Catégorie">
             <Select name="categorie" defaultValue={edition?.categorie ?? "Installation"}>
-              {Array.from(new Set(["Installation", "Dépannage", "Maintenance", "Câblage", ...items.map((i) => i.categorie)])).map((c) => (
+              {Array.from(new Set([metier, "Installation", "Dépannage", "Maintenance", "Rénovation", ...items.map((i) => i.categorie)])).map((c) => (
                 <option key={c}>{c}</option>
               ))}
             </Select>
@@ -141,7 +213,9 @@ export default function PortfolioView() {
             <Button variant="ghost" onClick={() => setAjout(false)}>
               Annuler
             </Button>
-            <Button type="submit">{edition ? "Enregistrer" : "Publier"}</Button>
+            <Button type="submit" disabled={envoi}>
+              {envoi ? "Envoi…" : edition ? "Enregistrer" : "Publier"}
+            </Button>
           </div>
         </form>
       </Modal>

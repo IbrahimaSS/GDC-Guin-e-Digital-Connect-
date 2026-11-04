@@ -9,14 +9,27 @@ import { toast } from "@/components/motion/Toaster";
 import { StatutDemandeBadge } from "@/components/shared/status";
 import { Avatar, Button, Card, EmptyState, LinkButton, MetierIcon, PageHeader } from "@/components/ui";
 import { Tabs } from "@/components/ui/interactive";
+import ChargementListe from "@/components/shared/ChargementListe";
+import { apiActive, texteErreur } from "@/lib/api";
 import { DEMANDES_RECUES, formatGNF, TECHNICIEN_CONNECTE, type StatutDemande } from "@/lib/data";
 import { codeMission } from "@/lib/mission";
+import { accepterMission, useDemandesRecues } from "@/lib/missions";
 import { notifier } from "@/lib/notifier";
+import { useSession } from "@/lib/session";
+import { usePersistant } from "@/lib/stockage";
 
 type Filtre = "envoyee" | "acceptee" | "en_cours" | "terminee";
 
+const AUCUNE: string[] = [];
+
 export default function DemandesRecues() {
-  const [demandes, setDemandes] = useState(DEMANDES_RECUES);
+  const source = useDemandesRecues();
+  // Démonstration : liste modifiée sur place. API : rechargée après chaque réponse.
+  const [locales, setLocales] = useState(DEMANDES_RECUES);
+  // Demandes ouvertes que le technicien a déclinées : masquées chez lui, toujours visibles des autres.
+  const session = useSession();
+  const [ignorees, setIgnorees] = usePersistant<string[]>(`demandes-ignorees-${session?.utilisateur.id ?? "demo"}`, AUCUNE);
+  const demandes = (apiActive ? source.demandes : locales).filter((d) => !ignorees.includes(d.id));
   const [filtre, setFiltre] = useState<Filtre>("envoyee");
   const ref = useRef<HTMLDivElement>(null);
   const { contextSafe } = useGSAP({ scope: ref });
@@ -24,18 +37,33 @@ export default function DemandesRecues() {
   const count = (s: StatutDemande) => demandes.filter((d) => d.statut === s).length;
   const liste = demandes.filter((d) => d.statut === filtre);
 
+  async function appliquer(id: string, accepter: boolean) {
+    const d = demandes.find((x) => x.id === id);
+    if (!accepter) {
+      setIgnorees([...ignorees, id]);
+      return toast("Demande masquée : elle reste proposée aux autres professionnels.", "info");
+    }
+    if (!apiActive) {
+      setLocales((prev) => prev.map((x) => (x.id === id ? { ...x, statut: "acceptee" } : x)));
+      if (d) notifier("demande_acceptee", { client: d.client, technicien: TECHNICIEN_CONNECTE.nom, mission: d.titre, code: codeMission(d.id), numero: d.clientTel });
+      return;
+    }
+    try {
+      await accepterMission(id);
+      toast("Mission acceptée : le client est prévenu et reçoit son code d'intervention.");
+    } catch (e) {
+      toast(texteErreur(e), "error");
+    }
+    source.recharger();
+  }
+
   const repondre = contextSafe((id: string, accepter: boolean) => {
     gsap.to(`[data-demande="${id}"]`, {
       x: accepter ? 80 : -80,
       autoAlpha: 0,
       duration: 0.4,
       ease: "power2.in",
-      onComplete: () => {
-        setDemandes((prev) => (accepter ? prev.map((d) => (d.id === id ? { ...d, statut: "acceptee" } : d)) : prev.filter((d) => d.id !== id)));
-        const d = demandes.find((x) => x.id === id);
-        if (accepter && d) notifier("demande_acceptee", { client: d.client, technicien: TECHNICIEN_CONNECTE.nom, mission: d.titre, code: codeMission(d.id), numero: d.clientTel });
-        else toast("Demande refusée", "info");
-      },
+      onComplete: () => void appliquer(id, accepter),
     });
   });
 
@@ -54,8 +82,10 @@ export default function DemandesRecues() {
         className="mb-6"
       />
 
-      {liste.length === 0 ? (
-        <EmptyState icon={Inbox} title="Aucune demande ici" text="Les nouvelles demandes de votre zone apparaîtront dans cet onglet." />
+      {source.chargement ? (
+        <ChargementListe />
+      ) : liste.length === 0 ? (
+        <EmptyState icon={Inbox} title="Aucune demande ici" text={source.erreur ?? "Les nouvelles demandes de votre zone apparaîtront dans cet onglet."} />
       ) : (
         <Reveal className="grid gap-4 lg:grid-cols-2" deps={[filtre, liste.length]} y={20} stagger={0.08}>
           {liste.map((d) => (
@@ -97,8 +127,11 @@ export default function DemandesRecues() {
                 {d.statut === "envoyee" ? (
                   <>
                     <Button variant="ghost" size="sm" onClick={() => repondre(d.id, false)}>
-                      <X className="size-4" /> Refuser
+                      <X className="size-4" /> Décliner
                     </Button>
+                    <LinkButton href={`/technicien/missions/${d.id}`} variant="ghost" size="sm">
+                      Détail
+                    </LinkButton>
                     <Button variant="secondary" size="sm" onClick={() => repondre(d.id, true)}>
                       <Check className="size-4" /> Accepter
                     </Button>

@@ -8,7 +8,9 @@ import { gsap, useGSAP } from "@/components/motion/gsap";
 import Reveal from "@/components/motion/Reveal";
 import { toast } from "@/components/motion/Toaster";
 import { Avatar, Button, Card, cn, PageHeader, Stars, Textarea } from "@/components/ui";
+import { api, apiActive, texteErreur } from "@/lib/api";
 import { TECHNICIEN_CONNECTE as moi } from "@/lib/data";
+import { useApi } from "@/lib/useApi";
 
 const REPARTITION = [
   { n: 5, c: 25 },
@@ -25,7 +27,7 @@ const CRITERES = [
   { l: "Communication", v: 4.8 },
 ];
 
-function Reponse({ id, reponse, onSave }: { id: string; reponse?: string; onSave: (id: string, txt: string) => void }) {
+function Reponse({ id, reponse, onSave }: { id: string; reponse?: string; onSave: (id: string, txt: string) => Promise<boolean> }) {
   const [ouvert, setOuvert] = useState(false);
   const [texte, setTexte] = useState("");
   const ref = useRef<HTMLDivElement>(null);
@@ -65,9 +67,8 @@ function Reponse({ id, reponse, onSave }: { id: string; reponse?: string; onSave
             <Button
               size="sm"
               disabled={!texte.trim()}
-              onClick={() => {
-                onSave(id, texte);
-                toast("Réponse publiée");
+              onClick={async () => {
+                if (await onSave(id, texte)) toast("Réponse publiée");
               }}
             >
               Publier
@@ -79,11 +80,67 @@ function Reponse({ id, reponse, onSave }: { id: string; reponse?: string; onSave
   );
 }
 
+interface AvisApi {
+  id: string;
+  note: number;
+  criteres: { ponctualite: number; qualite: number; prix: number; communication: number } | null;
+  commentaire: string | null;
+  reponse: string | null;
+  statut: "PUBLIE" | "EN_ATTENTE" | "MASQUE";
+  createdAt: string;
+  auteur: { prenom: string; nom: string };
+  demande: { titre: string };
+}
+
+const moyenne = (valeurs: number[]) => (valeurs.length ? Math.round((valeurs.reduce((s, v) => s + v, 0) / valeurs.length) * 10) / 10 : 0);
+
 export default function AvisRecus() {
+  const distants = useApi<AvisApi[]>(apiActive ? "/avis/recus" : null);
   const [filtre, setFiltre] = useState(0);
-  const [reponses, setReponses] = useState<Record<string, string>>({ a2: "Merci beaucoup Fatoumata, au plaisir de vous aider à nouveau !" });
-  const total = REPARTITION.reduce((s, r) => s + r.c, 0);
-  const avis = moi.avis.filter((a) => !filtre || a.note === filtre);
+  const [reponses, setReponses] = useState<Record<string, string>>(apiActive ? {} : { a2: "Merci beaucoup Fatoumata, au plaisir de vous aider à nouveau !" });
+
+  // Avec l'API : avis publiés uniquement, répartition et notes détaillées calculées à partir d'eux.
+  const publies = (distants.donnees ?? []).filter((a) => a.statut === "PUBLIE");
+  const tous = apiActive
+    ? publies.map((a) => ({
+        id: a.id,
+        auteur: `${a.auteur.prenom} ${a.auteur.nom}`,
+        note: a.note,
+        commentaire: a.commentaire ?? "",
+        mission: a.demande.titre,
+        date: new Date(a.createdAt).toLocaleDateString("fr-FR", { day: "numeric", month: "short", year: "numeric" }),
+        reponse: a.reponse ?? undefined,
+      }))
+    : moi.avis.map((a) => ({ ...a, reponse: undefined as string | undefined }));
+  const repartition = apiActive ? [5, 4, 3, 2, 1].map((n) => ({ n, c: publies.filter((a) => a.note === n).length })) : REPARTITION;
+  const avecCriteres = publies.filter((a) => a.criteres);
+  const criteres = apiActive
+    ? [
+        { l: "Ponctualité", v: moyenne(avecCriteres.map((a) => a.criteres!.ponctualite)) },
+        { l: "Qualité du travail", v: moyenne(avecCriteres.map((a) => a.criteres!.qualite)) },
+        { l: "Rapport qualité / prix", v: moyenne(avecCriteres.map((a) => a.criteres!.prix)) },
+        { l: "Communication", v: moyenne(avecCriteres.map((a) => a.criteres!.communication)) },
+      ]
+    : CRITERES;
+  const note = apiActive ? moyenne(publies.map((a) => a.note)) : moi.note;
+  const nbAvis = apiActive ? publies.length : moi.nbAvis;
+  const total = repartition.reduce((s, r) => s + r.c, 0);
+  const avis = tous.filter((a) => !filtre || a.note === filtre);
+
+  async function repondre(id: string, texte: string) {
+    if (apiActive) {
+      try {
+        await api(`/avis/${id}/reponse`, { methode: "POST", corps: { reponse: texte.trim() } });
+      } catch (e) {
+        toast(texteErreur(e), "error");
+        return false;
+      }
+    }
+    setReponses({ ...reponses, [id]: texte.trim() });
+    return true;
+  }
+
+  if (distants.chargement) return <div className="h-96 animate-pulse rounded-2xl bg-slate-100" aria-busy="true" />;
 
   return (
     <>
@@ -92,14 +149,14 @@ export default function AvisRecus() {
         <Reveal className="space-y-6">
           <Card className="p-6 text-center">
             <p className="text-6xl font-extrabold text-brand-950">
-              <Counter value={moi.note} decimals={1} />
+              <Counter value={note} decimals={1} />
             </p>
             <div className="mt-2 flex justify-center">
-              <Stars note={5} className="size-5" />
+              <Stars note={Math.round(note)} className="size-5" />
             </div>
-            <p className="mt-1 text-sm text-slate-500">{moi.nbAvis} avis</p>
+            <p className="mt-1 text-sm text-slate-500">{nbAvis} avis</p>
             <ul className="mt-6 space-y-2">
-              {REPARTITION.map((r) => (
+              {repartition.map((r) => (
                 <li key={r.n}>
                   <button
                     onClick={() => setFiltre(filtre === r.n ? 0 : r.n)}
@@ -108,7 +165,7 @@ export default function AvisRecus() {
                     <span className="flex w-6 items-center gap-0.5 font-semibold">
                       {r.n} <Star className="size-3 fill-amber-400 text-amber-400" />
                     </span>
-                    <ProgressBar value={(r.c / total) * 100} color="bg-amber-400" />
+                    <ProgressBar value={total ? (r.c / total) * 100 : 0} color="bg-amber-400" />
                     <span className="w-6 text-right text-slate-500">{r.c}</span>
                   </button>
                 </li>
@@ -117,8 +174,9 @@ export default function AvisRecus() {
           </Card>
           <Card className="p-6">
             <h2 className="mb-4 font-bold text-slate-900">Notes détaillées</h2>
+            {apiActive && !avecCriteres.length && <p className="text-sm text-slate-400">Aucun client n&apos;a encore détaillé sa note.</p>}
             <ul className="space-y-4">
-              {CRITERES.map((c) => (
+              {(apiActive && !avecCriteres.length ? [] : criteres).map((c) => (
                 <li key={c.l}>
                   <div className="mb-1.5 flex justify-between text-sm">
                     <span className="text-slate-600">{c.l}</span>
@@ -141,7 +199,9 @@ export default function AvisRecus() {
             )}
           </div>
           {avis.length === 0 ? (
-            <p className="py-10 text-center text-sm text-slate-500">Aucun avis avec cette note.</p>
+            <p className="py-10 text-center text-sm text-slate-500">
+              {tous.length ? "Aucun avis avec cette note." : "Vos premiers avis apparaîtront ici après vos missions terminées."}
+            </p>
           ) : (
             <Reveal as="ul" className="space-y-4" deps={[filtre]} y={14}>
               {avis.map((a) => (
@@ -158,7 +218,7 @@ export default function AvisRecus() {
                         <span className="text-xs text-slate-500">{a.mission}</span>
                       </div>
                       <p className="mt-2 text-sm text-slate-700">{a.commentaire}</p>
-                      <Reponse id={a.id} reponse={reponses[a.id]} onSave={(id, txt) => setReponses({ ...reponses, [id]: txt })} />
+                      <Reponse id={a.id} reponse={reponses[a.id] ?? a.reponse} onSave={repondre} />
                     </div>
                   </div>
                 </li>

@@ -1,9 +1,10 @@
 "use client";
 
+import { useParametresPublics } from "@/lib/plateforme";
 import { usePersistant } from "@/lib/stockage";
 
 // Logos personnalisés importés par l'administrateur (Paramètres › Identité visuelle), sinon logos d'origine.
-// Conservés dans le navigateur en attendant l'API ; avec un backend, ce seront des fichiers stockés côté serveur.
+// Avec l'API : fichiers stockés sur le serveur, les mêmes pour tous les visiteurs ; en démonstration : dans le navigateur.
 export const CLE_LOGO_CLAIR = "logo-clair";
 export const CLE_LOGO_SOMBRE = "logo-sombre";
 export const LOGO_CLAIR_DEFAUT = "/logo-gdc.png";
@@ -13,8 +14,11 @@ const AUCUN: string | null = null;
 
 /** Adresses des logos à afficher (personnalisés ou d'origine). */
 export function useLogos() {
-  const [clair] = usePersistant(CLE_LOGO_CLAIR, AUCUN);
-  const [sombre] = usePersistant(CLE_LOGO_SOMBRE, AUCUN);
+  const parametres = useParametresPublics();
+  const [clairLocal] = usePersistant(CLE_LOGO_CLAIR, AUCUN);
+  const [sombreLocal] = usePersistant(CLE_LOGO_SOMBRE, AUCUN);
+  const clair = parametres ? parametres.logoUrl : clairLocal;
+  const sombre = parametres ? parametres.logoSombreUrl : sombreLocal;
   return { clair: clair ?? LOGO_CLAIR_DEFAUT, sombre: sombre ?? LOGO_SOMBRE_DEFAUT, personnalise: Boolean(clair || sombre) };
 }
 

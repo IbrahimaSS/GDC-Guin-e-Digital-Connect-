@@ -7,7 +7,9 @@ import Reveal from "@/components/motion/Reveal";
 import { toast } from "@/components/motion/Toaster";
 import { Button, Card, cn, Field, Input, MetierIcon, PageHeader, Textarea } from "@/components/ui";
 import { Modal, Toggle } from "@/components/ui/interactive";
+import { api, apiActive, texteErreur } from "@/lib/api";
 import { METIERS, TECHNICIENS, type Metier } from "@/lib/data";
+import { useApi } from "@/lib/useApi";
 
 type MetierAdmin = Omit<Metier, "id"> & { id: string; specialites?: string[] };
 
@@ -19,16 +21,53 @@ const slug = (t: string) =>
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/(^-|-$)/g, "");
 
+interface MetierApi {
+  id: string;
+  label: string;
+  specialites: string[];
+  actif: boolean;
+  nbTechniciens: number;
+  nbDemandes: number;
+}
+
 export default function GestionMetiers() {
+  const distants = useApi<MetierApi[]>(apiActive ? "/admin/metiers" : null);
   // Spécialités connues de chaque métier, pour pré-remplir la modification.
-  const [metiers, setMetiers] = useState<MetierAdmin[]>(() =>
+  const [locaux, setLocaux] = useState<MetierAdmin[]>(() =>
     METIERS.map((m) => ({ ...m, specialites: Array.from(new Set(TECHNICIENS.filter((t) => t.metier === m.id).flatMap((t) => t.specialites))) })),
   );
+  const metiers: MetierAdmin[] = apiActive
+    ? (distants.donnees ?? []).map((m) => ({ id: m.id, label: m.label, actif: m.actif, specialites: m.specialites, techniciens: m.nbTechniciens, demandes: m.nbDemandes }))
+    : locaux;
+  const [envoi, setEnvoi] = useState(false);
+
+  /** Avec l'API : enregistre puis recharge la liste ; en démonstration, met à jour la liste locale. */
+  async function enregistrerMetier(id: string, corps: { label?: string; specialites?: string[]; actif?: boolean }, nouveau = false) {
+    if (!apiActive) {
+      setLocaux((liste) =>
+        nouveau
+          ? [...liste, { id, label: corps.label!, techniciens: 0, demandes: 0, actif: corps.actif ?? true, specialites: corps.specialites ?? [] }]
+          : liste.map((m) => (m.id === id ? { ...m, ...corps } : m)),
+      );
+      return true;
+    }
+    setEnvoi(true);
+    try {
+      await api(nouveau ? "/admin/metiers" : `/admin/metiers/${id}`, { methode: nouveau ? "POST" : "PATCH", corps: nouveau ? { id, ...corps } : corps });
+      distants.recharger();
+      return true;
+    } catch (e) {
+      toast(texteErreur(e), "error");
+      return false;
+    } finally {
+      setEnvoi(false);
+    }
+  }
   const [ajout, setAjout] = useState(false);
   const [edition, setEdition] = useState<MetierAdmin | null>(null);
   const [visible, setVisible] = useState(true);
   const [erreur, setErreur] = useState("");
-  const max = Math.max(...metiers.map((m) => m.techniciens));
+  const max = Math.max(1, ...metiers.map((m) => m.techniciens));
 
   const ouvrir = (m: MetierAdmin | null) => {
     setEdition(m);
@@ -37,7 +76,7 @@ export default function GestionMetiers() {
     setAjout(true);
   };
 
-  function ajouter(e: FormEvent<HTMLFormElement>) {
+  async function ajouter(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     const form = e.currentTarget;
     const data = new FormData(form);
@@ -46,15 +85,13 @@ export default function GestionMetiers() {
     const specialites = String(data.get("specialites") ?? "")
       .split(",")
       .map((x) => x.trim())
-      .filter(Boolean);
-    // TODO : enregistrer via l'API ; le nouveau métier sera alors proposé dans la recherche et l'inscription.
-    if (edition) {
-      setMetiers(metiers.map((m) => (m.id === edition.id ? { ...m, label: nom, actif: visible, specialites } : m)));
-      toast(`Métier « ${nom} » modifié`);
-    } else {
-      setMetiers([...metiers, { id: slug(nom) || String(Date.now()), label: nom, techniciens: 0, demandes: 0, actif: visible, specialites }]);
-      toast(`Métier « ${nom} » ajouté`);
-    }
+      .filter(Boolean)
+      .slice(0, 30);
+    const id = edition?.id ?? slug(nom);
+    if (!/^[a-z0-9-]{2,40}$/.test(id)) return setErreur("Nom trop court ou sans lettres.");
+    // Le métier est alors proposé dans la recherche, l'inscription et les demandes.
+    if (!(await enregistrerMetier(id, { label: nom, actif: visible, specialites }, !edition))) return;
+    toast(edition ? `Métier « ${nom} » modifié` : `Métier « ${nom} » ajouté`);
     form.reset();
     setErreur("");
     setAjout(false);
@@ -97,9 +134,8 @@ export default function GestionMetiers() {
             <div className="mt-4 border-t border-slate-100 pt-4">
               <Toggle
                 checked={m.actif}
-                onChange={(v) => {
-                  setMetiers(metiers.map((x) => (x.id === m.id ? { ...x, actif: v } : x)));
-                  toast(v ? `${m.label} activé` : `${m.label} désactivé`, "info");
+                onChange={async (v) => {
+                  if (await enregistrerMetier(m.id, { actif: v })) toast(v ? `${m.label} activé` : `${m.label} masqué : il n'est plus proposé aux clients`, "info");
                 }}
                 label={m.actif ? "Visible" : "Masqué"}
               />
@@ -122,7 +158,9 @@ export default function GestionMetiers() {
             <Button variant="ghost" onClick={() => setAjout(false)}>
               Annuler
             </Button>
-            <Button type="submit">{edition ? "Enregistrer" : "Ajouter le métier"}</Button>
+            <Button type="submit" disabled={envoi}>
+              {edition ? "Enregistrer" : "Ajouter le métier"}
+            </Button>
           </div>
         </form>
       </Modal>

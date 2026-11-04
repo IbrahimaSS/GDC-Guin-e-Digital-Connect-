@@ -6,20 +6,65 @@ import Reveal from "@/components/motion/Reveal";
 import { toast } from "@/components/motion/Toaster";
 import { Button, Card, cn, Input, PageHeader, Select } from "@/components/ui";
 import { Toggle } from "@/components/ui/interactive";
+import { api, apiActive, texteErreur } from "@/lib/api";
+import { AGENDA_DEFAUT, lireAgenda, modifierMonProfil, resumeAgenda, useMonProfil, type Agenda, type Conge } from "@/lib/monProfil";
+import { mettreAJourUtilisateur, type UtilisateurApi } from "@/lib/session";
 
-const JOURS = ["Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi", "Samedi", "Dimanche"];
 const HEURES = Array.from({ length: 15 }, (_, i) => `${String(i + 6).padStart(2, "0")}:00`);
+const DEMO: Agenda = { ...AGENDA_DEFAUT, conges: [{ du: "2026-12-24", au: "2026-12-26", motif: "Fêtes de fin d'année" }] };
 
 export default function DisponibiliteView() {
-  const [dispoMaintenant, setDispoMaintenant] = useState(true);
-  const [urgences, setUrgences] = useState(true);
-  const [planning, setPlanning] = useState(
-    JOURS.map((j, i) => ({ jour: j, actif: i < 6, debut: "08:00", fin: i === 5 ? "14:00" : "18:00" })),
-  );
-  const [conges, setConges] = useState([{ id: 1, du: "2026-12-24", au: "2026-12-26", motif: "Fêtes de fin d'année" }]);
+  const profil = useMonProfil();
+  if (!apiActive) return <Calendrier initial={DEMO} disponible />;
+  if (!profil.donnees) return <div className="h-96 animate-pulse rounded-2xl bg-slate-100" aria-busy="true" />;
+  return <Calendrier initial={lireAgenda(profil.donnees.agenda)} disponible={profil.donnees.disponible} />;
+}
+
+function Calendrier({ initial, disponible }: { initial: Agenda; disponible: boolean }) {
+  const [dispoMaintenant, setDispoMaintenant] = useState(disponible);
+  const [urgences, setUrgences] = useState(initial.urgences);
+  const [delai, setDelai] = useState(initial.delai);
+  const [planning, setPlanning] = useState(initial.planning);
+  // Identifiant local de chaque ligne de congé (pour l'affichage et la suppression).
+  const [conges, setConges] = useState(initial.conges.map((c, i) => ({ ...c, cle: i })));
+  const [envoi, setEnvoi] = useState(false);
 
   const update = (i: number, patch: Partial<(typeof planning)[0]>) => setPlanning(planning.map((p, k) => (k === i ? { ...p, ...patch } : p)));
-  const heuresSemaine = planning.filter((p) => p.actif).reduce((s, p) => s + (parseInt(p.fin) - parseInt(p.debut)), 0);
+  const majConge = (cle: number, patch: Partial<Conge>) => setConges(conges.map((c) => (c.cle === cle ? { ...c, ...patch } : c)));
+  const heuresSemaine = planning.filter((p) => p.actif).reduce((s, p) => s + Math.max(0, parseInt(p.fin) - parseInt(p.debut)), 0);
+
+  // « Disponible maintenant » s'applique tout de suite : c'est le badge vu par les clients.
+  async function basculer(v: boolean) {
+    setDispoMaintenant(v);
+    if (!apiActive) return;
+    try {
+      await api("/techniciens/moi/disponibilite", { methode: "PATCH", corps: { disponible: v } });
+      api<UtilisateurApi>("/moi").then(mettreAJourUtilisateur).catch(() => undefined);
+      toast(v ? "Vous apparaissez comme disponible" : "Vous apparaissez comme indisponible", "info");
+    } catch (e) {
+      setDispoMaintenant(!v);
+      toast(texteErreur(e), "error");
+    }
+  }
+
+  async function enregistrer() {
+    if (planning.some((p) => p.actif && p.fin <= p.debut)) return toast("Une plage horaire se termine avant de commencer.", "error");
+    const congesValides = conges.filter((c) => c.du && c.au);
+    if (congesValides.some((c) => c.au < c.du)) return toast("Un congé se termine avant de commencer.", "error");
+    if (!apiActive) return toast("Disponibilités enregistrées");
+    setEnvoi(true);
+    try {
+      await modifierMonProfil({
+        agenda: { planning, conges: congesValides.map(({ du, au, motif }) => ({ du, au, motif: motif?.trim() || undefined })), urgences, delai },
+        disponibilites: resumeAgenda(planning),
+      });
+      toast("Disponibilités enregistrées");
+    } catch (e) {
+      toast(texteErreur(e), "error");
+    } finally {
+      setEnvoi(false);
+    }
+  }
 
   return (
     <>
@@ -66,18 +111,19 @@ export default function DisponibiliteView() {
           <Card className="p-6">
             <div className="mb-4 flex items-center justify-between">
               <h2 className="font-bold text-slate-900">Absences et congés</h2>
-              <Button variant="outline" size="sm" onClick={() => setConges([...conges, { id: Date.now(), du: "", au: "", motif: "" }])}>
+              <Button variant="outline" size="sm" onClick={() => setConges([...conges, { du: "", au: "", motif: "", cle: Date.now() }])}>
                 <Plus className="size-4" /> Ajouter
               </Button>
             </div>
+            {conges.length === 0 && <p className="text-sm text-slate-400">Aucune absence prévue.</p>}
             <Reveal className="space-y-2" deps={[conges.length]} y={8}>
               {conges.map((c) => (
-                <div key={c.id} className="grid items-center gap-2 rounded-xl bg-slate-50 p-3 md:grid-cols-[auto_1fr_1fr_1.5fr_auto]">
+                <div key={c.cle} className="grid items-center gap-2 rounded-xl bg-slate-50 p-3 md:grid-cols-[auto_1fr_1fr_1.5fr_auto]">
                   <CalendarOff className="hidden size-5 text-accent-500 md:block" />
-                  <Input type="date" defaultValue={c.du} aria-label="Du" />
-                  <Input type="date" defaultValue={c.au} aria-label="Au" />
-                  <Input defaultValue={c.motif} placeholder="Motif (optionnel)" />
-                  <button onClick={() => setConges(conges.filter((x) => x.id !== c.id))} className="justify-self-end rounded-lg p-2 text-slate-400 hover:bg-red-50 hover:text-red-500" aria-label="Supprimer">
+                  <Input type="date" value={c.du} onChange={(e) => majConge(c.cle, { du: e.target.value })} aria-label="Du" />
+                  <Input type="date" value={c.au} min={c.du || undefined} onChange={(e) => majConge(c.cle, { au: e.target.value })} aria-label="Au" />
+                  <Input value={c.motif ?? ""} maxLength={80} onChange={(e) => majConge(c.cle, { motif: e.target.value })} placeholder="Motif (optionnel)" />
+                  <button onClick={() => setConges(conges.filter((x) => x.cle !== c.cle))} className="justify-self-end rounded-lg p-2 text-slate-400 hover:bg-red-50 hover:text-red-500" aria-label="Supprimer">
                     <Trash2 className="size-4" />
                   </button>
                 </div>
@@ -88,7 +134,7 @@ export default function DisponibiliteView() {
 
         <Reveal className="space-y-6" delay={0.1}>
           <Card className={cn("p-6 transition-colors duration-500", dispoMaintenant ? "bg-emerald-50/60 ring-emerald-200" : "")}>
-            <Toggle checked={dispoMaintenant} onChange={setDispoMaintenant} label="Disponible maintenant" description="Les clients voient le badge vert sur votre profil." />
+            <Toggle checked={dispoMaintenant} onChange={basculer} label="Disponible maintenant" description="Les clients voient le badge vert sur votre profil." />
             <div className="mt-4 flex items-center gap-2 text-sm font-semibold">
               <span className={cn("size-2.5 rounded-full", dispoMaintenant ? "animate-pulse bg-emerald-500" : "bg-slate-400")} />
               {dispoMaintenant ? "Vous apparaissez comme disponible" : "Vous apparaissez comme indisponible"}
@@ -98,22 +144,22 @@ export default function DisponibiliteView() {
             <Toggle checked={urgences} onChange={setUrgences} label="Accepter les urgences" description="Recevoir les demandes urgentes en dehors de vos horaires." />
             {urgences && (
               <p className="mt-4 flex items-start gap-2 rounded-xl bg-accent-50 p-3 text-xs text-accent-600">
-                <Zap className="size-4 shrink-0" /> Les interventions urgentes sont mieux rémunérées et boostent votre visibilité.
+                <Zap className="size-4 shrink-0" /> Les demandes urgentes sont mises en avant dans votre liste de demandes reçues.
               </p>
             )}
           </Card>
           <Card className="p-6">
             <h3 className="font-bold text-slate-900">Délai de prévenance</h3>
             <p className="mb-3 text-sm text-slate-500">Temps minimum avant une intervention planifiée.</p>
-            <Select defaultValue="2h">
+            <Select value={delai} onChange={(e) => setDelai(e.target.value as Agenda["delai"])}>
               <option value="1h">1 heure</option>
               <option value="2h">2 heures</option>
               <option value="24h">24 heures</option>
               <option value="48h">48 heures</option>
             </Select>
           </Card>
-          <Button size="lg" className="w-full" onClick={() => toast("Disponibilités enregistrées")}>
-            Enregistrer mes disponibilités
+          <Button size="lg" className="w-full" onClick={enregistrer} disabled={envoi}>
+            {envoi ? "Enregistrement…" : "Enregistrer mes disponibilités"}
           </Button>
         </Reveal>
       </div>

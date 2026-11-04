@@ -6,6 +6,9 @@ import { toast } from "@/components/motion/Toaster";
 import { Button, Card, cn } from "@/components/ui";
 import { Modal } from "@/components/ui/interactive";
 import { CLE_LOGO_CLAIR, CLE_LOGO_SOMBRE, useLogos } from "@/components/ui/Logo";
+import { api, apiActive, texteErreur } from "@/lib/api";
+import { televerser } from "@/lib/fichiers";
+import { rafraichirParametres } from "@/lib/plateforme";
 import { ecrire } from "@/lib/stockage";
 
 const TYPES = ["image/png", "image/jpeg", "image/webp", "image/svg+xml"];
@@ -43,12 +46,25 @@ function Emplacement({ titre, aide, src, fond, cle }: { titre: string; aide: str
     if (!fichier) return;
     if (!TYPES.includes(fichier.type)) return toast("Format non pris en charge : PNG, JPG, WebP ou SVG.", "error");
     if (fichier.size > TAILLE_MAX) return toast("Fichier trop lourd : 2 Mo maximum.", "error");
+    let image: string;
     try {
-      // TODO : envoyer le fichier à l'API (stockage du logo pour tous les visiteurs).
-      ecrire(cle, await preparer(fichier));
-      toast(`Logo ${fond === "clair" ? "pour fond clair" : "pour fond sombre"} mis à jour`);
+      image = await preparer(fichier);
     } catch {
-      toast("Impossible de lire cette image.", "error");
+      return toast("Impossible de lire cette image.", "error");
+    }
+    if (!apiActive) {
+      ecrire(cle, image);
+      return toast(`Logo ${fond === "clair" ? "pour fond clair" : "pour fond sombre"} mis à jour`);
+    }
+    // Avec l'API : le PNG préparé est envoyé au serveur, puis son adresse est enregistrée dans les paramètres.
+    try {
+      const png = new File([await (await fetch(image)).blob()], "logo.png", { type: "image/png" });
+      const url = await televerser(png, "photo");
+      await api("/admin/parametres", { methode: "PUT", corps: { [fond === "clair" ? "logoUrl" : "logoSombreUrl"]: url } });
+      await rafraichirParametres();
+      toast(`Logo ${fond === "clair" ? "pour fond clair" : "pour fond sombre"} mis à jour pour tous les visiteurs`);
+    } catch (e) {
+      toast(texteErreur(e), "error");
     }
   }
 
@@ -136,10 +152,19 @@ export default function LogoEditeur() {
             </Button>
             <Button
               variant="danger"
-              onClick={() => {
-                ecrire(CLE_LOGO_CLAIR, null);
-                ecrire(CLE_LOGO_SOMBRE, null);
+              onClick={async () => {
                 setConfirmation(false);
+                if (apiActive) {
+                  try {
+                    await api("/admin/parametres", { methode: "PUT", corps: { logoUrl: null, logoSombreUrl: null } });
+                    await rafraichirParametres();
+                  } catch (e) {
+                    return toast(texteErreur(e), "error");
+                  }
+                } else {
+                  ecrire(CLE_LOGO_CLAIR, null);
+                  ecrire(CLE_LOGO_SOMBRE, null);
+                }
                 toast("Logo d'origine rétabli", "info");
               }}
             >

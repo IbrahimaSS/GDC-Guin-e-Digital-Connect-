@@ -5,9 +5,12 @@ import { useState } from "react";
 import Reveal from "@/components/motion/Reveal";
 import { toast } from "@/components/motion/Toaster";
 import { StatutSignalementBadge } from "@/components/shared/status";
-import { Badge, Button, Card, cn, PageHeader, StatCard, type Tone } from "@/components/ui";
+import { Badge, Button, Card, cn, EmptyState, PageHeader, StatCard, type Tone } from "@/components/ui";
 import { Tabs } from "@/components/ui/interactive";
-import { SIGNALEMENTS, type StatutSignalement } from "@/lib/data";
+import { dateCourte, useStatsAdmin } from "@/lib/admin";
+import { api, apiActive, texteErreur } from "@/lib/api";
+import { SIGNALEMENTS, type Signalement, type StatutSignalement } from "@/lib/data";
+import { useApi } from "@/lib/useApi";
 
 const PRIORITES: Record<string, [Tone, string]> = {
   haute: ["red", "Priorité haute"],
@@ -17,16 +20,63 @@ const PRIORITES: Record<string, [Tone, string]> = {
 
 type Filtre = "tous" | StatutSignalement;
 
+interface SignalementApi {
+  id: string;
+  type: string;
+  cible: string;
+  cibleLibelle: string;
+  motif: string;
+  priorite: "haute" | "moyenne" | "basse";
+  statut: "OUVERT" | "EN_COURS" | "RESOLU";
+  createdAt: string;
+  auteur: { prenom: string; nom: string } | null;
+}
+
+/** Nature du signalement, d'après l'élément visé. */
+const TYPES: Record<string, string> = {
+  technicien: "Profil technicien",
+  client: "Compte client",
+  demande: "Litige mission",
+  avis: "Avis signalé",
+  autre: "Autre",
+};
+
+type Ligne = Omit<Signalement, "type"> & { type: string };
+
 export default function GestionSignalements() {
-  const [items, setItems] = useState(SIGNALEMENTS);
+  const distants = useApi<SignalementApi[]>(apiActive ? "/admin/signalements" : null);
+  const stats = useStatsAdmin();
+  const [locaux, setLocaux] = useState<Ligne[]>(SIGNALEMENTS);
+  const items: Ligne[] = apiActive
+    ? (distants.donnees ?? []).map((s) => ({
+        id: s.id,
+        type: TYPES[s.type] ?? s.type,
+        cible: s.cibleLibelle,
+        auteur: s.auteur ? `${s.auteur.prenom} ${s.auteur.nom}` : "Anonyme",
+        motif: s.motif,
+        date: dateCourte(s.createdAt),
+        statut: s.statut.toLowerCase() as StatutSignalement,
+        priorite: s.priorite,
+      }))
+    : locaux;
   const [filtre, setFiltre] = useState<Filtre>("ouvert");
   const liste = items.filter((s) => filtre === "tous" || s.statut === filtre);
   const count = (s: StatutSignalement) => items.filter((i) => i.statut === s).length;
 
-  const avancer = (id: string, statut: StatutSignalement) => {
-    setItems(items.map((s) => (s.id === id ? { ...s, statut } : s)));
+  async function avancer(id: string, statut: StatutSignalement) {
+    if (apiActive) {
+      try {
+        await api(`/admin/signalements/${id}`, { methode: "PATCH", corps: { statut: statut.toUpperCase() } });
+        distants.recharger();
+        stats.recharger();
+      } catch (e) {
+        return toast(texteErreur(e), "error");
+      }
+    } else {
+      setLocaux(locaux.map((s) => (s.id === id ? { ...s, statut } : s)));
+    }
     toast(statut === "resolu" ? "Signalement résolu" : "Signalement pris en charge");
-  };
+  }
 
   return (
     <>
@@ -34,8 +84,8 @@ export default function GestionSignalements() {
       <Reveal className="mb-6 grid grid-cols-2 gap-4 lg:grid-cols-4">
         <StatCard icon={Flag} label="Ouverts" value={count("ouvert")} tone="red" />
         <StatCard icon={ShieldAlert} label="En cours" value={count("en_cours")} tone="blue" />
-        <StatCard icon={Check} label="Résolus ce mois" value={27} tone="green" />
-        <StatCard icon={AlertOctagon} label="Délai moyen (h)" value={6} tone="amber" />
+        <StatCard icon={Check} label="Résolus ce mois" value={apiActive ? (stats.donnees?.signalements.resolusCeMois ?? 0) : 27} tone="green" />
+        <StatCard icon={AlertOctagon} label="Délai moyen de résolution (h)" value={apiActive ? (stats.donnees?.signalements.delaiMoyenHeures ?? 0) : 6} tone="amber" />
       </Reveal>
       <Card className="p-5">
         <Tabs<Filtre>
@@ -48,7 +98,12 @@ export default function GestionSignalements() {
             { id: "tous", label: "Tous", count: items.length },
           ]}
         />
-        <Reveal className="mt-5 grid gap-3 lg:grid-cols-2" deps={[filtre, items]} y={14} stagger={0.06}>
+        {liste.length === 0 && (
+          <div className="mt-5">
+            <EmptyState icon={Flag} title={distants.chargement ? "Chargement…" : "Aucun signalement"} text="Aucun signalement dans cette catégorie." />
+          </div>
+        )}
+        <Reveal className="mt-5 grid gap-3 lg:grid-cols-2" deps={[filtre, items.length]} y={14} stagger={0.06}>
           {liste.map((s) => (
             <div key={s.id} className={cn("rounded-2xl border p-5", s.priorite === "haute" && s.statut !== "resolu" ? "border-red-200 bg-red-50/30" : "border-slate-200")}>
               <div className="flex items-start gap-3">
