@@ -96,6 +96,8 @@ model Fichier {
   type           TypeFichier
   mime           String
   taille         Int
+  /// Contenu du fichier, gardé en base : les hébergeurs gratuits effacent leur disque à chaque redémarrage
+  contenu        Bytes?
   proprietaireId String
   proprietaire   User        @relation(fields: [proprietaireId], references: [id], onDelete: Cascade)
   createdAt      DateTime    @default(now())

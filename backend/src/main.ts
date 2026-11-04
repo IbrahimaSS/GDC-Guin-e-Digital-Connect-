@@ -26,18 +26,21 @@ export function configurerApp(
   app.enableShutdownHooks();
   // Photos publiques (profil, réalisations, demandes, messages), lues directement par le navigateur.
   // Les pièces justificatives, elles, passent par GET /api/fichiers/pieces/:nom (connexion requise).
+  const fichiers = app.get(FichiersService);
   app.use(
-    '/fichiers/photos',
-    express.static(app.get(FichiersService).dossierPhotos, {
-      fallthrough: false,
-      index: false,
-      maxAge: '30d',
-      immutable: true,
-      setHeaders: (res) => {
-        res.setHeader('X-Content-Type-Options', 'nosniff');
-        res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
-      },
-    }),
+    '/fichiers/photos/:nom',
+    (req: express.Request, res: express.Response) => {
+      fichiers
+        .photo(String(req.params.nom))
+        .then(({ contenu, mime }) => {
+          res.setHeader('Content-Type', mime);
+          res.setHeader('Cache-Control', 'public, max-age=2592000, immutable');
+          res.setHeader('X-Content-Type-Options', 'nosniff');
+          res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+          res.send(contenu);
+        })
+        .catch(() => res.status(404).end());
+    },
   );
   return app;
 }

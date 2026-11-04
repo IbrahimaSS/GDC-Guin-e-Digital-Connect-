@@ -1,0 +1,55 @@
+# Hébergement de l'API sur Render (https://render.com) : New → Blueprint, dépôt GitHub du projet,
+# « Blueprint Path » = backend/render.yaml. Render crée la base PostgreSQL et le service web,
+# et demande à la création les valeurs marquées « sync: false ».
+services:
+  - type: web
+    name: gdc-api
+    runtime: node
+    plan: free
+    region: frankfurt
+    rootDir: backend
+    branch: main
+    buildCommand: npm ci --include=dev && npm run build
+    # Migrations, puis métiers / zones / administrateur (sans rien effacer), puis l'API
+    startCommand: npm run start:hebergement
+    healthCheckPath: /api/parametres
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: NODE_VERSION
+        value: 22.21.1
+      - key: DATABASE_URL
+        fromDatabase:
+          name: gdc-db
+          property: connectionString
+      - key: JWT_ACCESS_SECRET
+        generateValue: true
+      - key: JWT_REFRESH_SECRET
+        generateValue: true
+      # Site autorisé à appeler l'API (plusieurs adresses : séparées par des virgules)
+      - key: CORS_ORIGIN
+        value: https://gdc-guinee-digital-connect.vercel.app
+      # Compte administrateur créé au premier démarrage (+224XXXXXXXXX)
+      - key: ADMIN_TELEPHONE
+        sync: false
+      - key: ADMIN_PRENOM
+        value: Ibrahima Sory
+      - key: ADMIN_NOM
+        value: Soumah
+      # Codes de connexion envoyés par SMS (Twilio : https://console.twilio.com)
+      - key: SMS_DRIVER
+        value: twilio
+      - key: TWILIO_ACCOUNT_SID
+        sync: false
+      - key: TWILIO_AUTH_TOKEN
+        sync: false
+      # Numéro Twilio (+1…) ou nom d'expéditeur alphanumérique (ex. GDC) si autorisé pour la Guinée
+      - key: TWILIO_FROM
+        sync: false
+
+databases:
+  - name: gdc-db
+    plan: free
+    region: frankfurt
+    databaseName: gdc
+    user: gdc

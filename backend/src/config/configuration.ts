@@ -23,6 +23,12 @@ export const configuration = () => ({
     maxEssais: Number(process.env.OTP_MAX_ESSAIS ?? 5),
   },
   smsDriver: process.env.SMS_DRIVER ?? 'console',
+  twilio: {
+    sid: process.env.TWILIO_ACCOUNT_SID ?? '',
+    jeton: process.env.TWILIO_AUTH_TOKEN ?? '',
+    expediteur: process.env.TWILIO_FROM ?? '',
+    expediteurWhatsapp: process.env.TWILIO_WHATSAPP_FROM ?? '',
+  },
   googleClientId: process.env.GOOGLE_CLIENT_ID ?? '',
   fichiers: {
     /** Dossier des fichiers envoyés (photos publiques et pièces justificatives privées). */
@@ -30,6 +36,8 @@ export const configuration = () => ({
     /** Adresse publique de l'API, utilisée pour construire l'URL des photos. */
     urlPublique: (
       process.env.API_PUBLIC_URL ??
+      // Adresse donnée automatiquement par Render
+      process.env.RENDER_EXTERNAL_URL ??
       `http://localhost:${process.env.PORT ?? 4000}`
     ).replace(/\/$/, ''),
   },

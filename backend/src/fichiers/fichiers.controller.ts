@@ -64,10 +64,10 @@ export class FichiersController {
     @Param('nom') nom: string,
     @Res() res: Response,
   ) {
-    const { chemin, mime } = await this.fichiers.piece(nom, u);
+    const { contenu, mime } = await this.fichiers.piece(nom, u);
     res.setHeader('Content-Type', mime);
     res.setHeader('Cache-Control', 'private, no-store');
     res.setHeader('X-Content-Type-Options', 'nosniff');
-    res.sendFile(chemin);
+    res.send(contenu);
   }
 }

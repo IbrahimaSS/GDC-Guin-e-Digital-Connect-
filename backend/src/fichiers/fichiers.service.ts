@@ -7,7 +7,7 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { randomBytes } from 'node:crypto';
-import { mkdir, unlink, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, unlink } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import type { UtilisateurConnecte } from '../common/auth.js';
 import type { TypeFichier } from '../generated/prisma/client.js';
@@ -74,11 +74,6 @@ export class FichiersService implements OnModuleInit {
     );
   }
 
-  /** Dossier des photos, servi tel quel sur /fichiers/photos (lecture publique). */
-  get dossierPhotos() {
-    return join(this.racine, DOSSIER.PHOTO);
-  }
-
   /** Adresse d'un fichier : publique pour une photo, protégée (connexion requise) pour une pièce. */
   url(type: TypeFichier, nom: string) {
     return type === 'PHOTO'
@@ -107,19 +102,39 @@ export class FichiersService implements OnModuleInit {
       );
     }
     const nom = `${randomBytes(16).toString('hex')}.${format.ext}`;
-    await writeFile(join(this.racine, DOSSIER[type], nom), fichier.buffer, {
-      flag: 'wx',
-    });
+    // Le contenu est gardé en base : il survit aux redémarrages et aux changements de serveur.
     const f = await this.prisma.fichier.create({
       data: {
         nom,
         type,
         mime: format.mime,
         taille: fichier.size,
+        contenu: new Uint8Array(fichier.buffer),
         proprietaireId: u.id,
       },
+      select: { id: true, mime: true },
     });
     return { id: f.id, type, mime: f.mime, url: this.url(type, nom) };
+  }
+
+  /** Contenu d'un fichier : en base, ou sur le disque pour ceux envoyés avant le stockage en base. */
+  private async lire(f: {
+    nom: string;
+    type: TypeFichier;
+    contenu: Uint8Array | null;
+  }) {
+    if (f.contenu) return Buffer.from(f.contenu);
+    return readFile(join(this.racine, DOSSIER[f.type], f.nom)).catch(() => {
+      throw new NotFoundException('Fichier introuvable.');
+    });
+  }
+
+  /** Photo publique (profil, réalisations, demandes, messages). */
+  async photo(nom: string) {
+    const f = await this.prisma.fichier.findUnique({ where: { nom } });
+    if (!f || f.type !== 'PHOTO')
+      throw new NotFoundException('Fichier introuvable.');
+    return { contenu: await this.lire(f), mime: f.mime };
   }
 
   /** Pièce justificative : seuls son propriétaire et l'équipe GDC peuvent la lire. */
@@ -129,13 +144,14 @@ export class FichiersService implements OnModuleInit {
       throw new NotFoundException('Fichier introuvable.');
     if (f.proprietaireId !== u.id && u.role !== 'ADMIN')
       throw new ForbiddenException('Accès réservé.');
-    return { chemin: join(this.racine, DOSSIER.PIECE, f.nom), mime: f.mime };
+    return { contenu: await this.lire(f), mime: f.mime };
   }
 
-  /** Supprime du disque les fichiers d'un utilisateur (suppression de compte). */
+  /** Supprime les fichiers d'un utilisateur (suppression de compte). */
   async supprimerTout(userId: string) {
     const fichiers = await this.prisma.fichier.findMany({
       where: { proprietaireId: userId },
+      select: { nom: true, type: true },
     });
     await Promise.all(
       fichiers.map((f) =>

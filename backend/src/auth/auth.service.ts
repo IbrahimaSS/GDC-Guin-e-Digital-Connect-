@@ -105,6 +105,7 @@ export class AuthService {
       texte: `GDC : votre code de connexion est ${code}. Valable ${ttl} minutes. Ne le communiquez à personne.`,
     });
     // En développement, aucun SMS ne part (pilote console) : le code est renvoyé pour pouvoir tester.
+    // Jamais en production : n'importe qui pourrait alors se connecter au compte d'un autre.
     const exposer =
       this.config.get('smsDriver') === 'console' &&
       process.env.NODE_ENV !== 'production';
