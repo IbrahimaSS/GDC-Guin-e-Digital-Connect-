@@ -11,8 +11,10 @@ import {
   IsUrl,
   Length,
   Max,
+  Matches,
   MaxLength,
   Min,
+  ValidateNested,
 } from 'class-validator';
 
 export class RechercheTechniciensDto {
@@ -69,6 +71,92 @@ export class RechercheTechniciensDto {
   parPage?: number;
 }
 
+const HEURE = /^([01]\d|2[0-3]):[0-5]\d$/;
+const DATE = /^\d{4}-\d{2}-\d{2}$/;
+
+export class CreneauJourDto {
+  @IsIn([
+    'Lundi',
+    'Mardi',
+    'Mercredi',
+    'Jeudi',
+    'Vendredi',
+    'Samedi',
+    'Dimanche',
+  ])
+  jour: string;
+
+  @IsBoolean()
+  actif: boolean;
+
+  @Matches(HEURE)
+  debut: string;
+
+  @Matches(HEURE)
+  fin: string;
+}
+
+export class CongeDto {
+  @Matches(DATE)
+  du: string;
+
+  @Matches(DATE)
+  au: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(80)
+  motif?: string;
+}
+
+/** Calendrier du technicien. */
+export class AgendaDto {
+  @IsArray()
+  @ArrayMaxSize(7)
+  @ValidateNested({ each: true })
+  @Type(() => CreneauJourDto)
+  planning: CreneauJourDto[];
+
+  @IsArray()
+  @ArrayMaxSize(20)
+  @ValidateNested({ each: true })
+  @Type(() => CongeDto)
+  conges: CongeDto[];
+
+  @IsBoolean()
+  urgences: boolean;
+
+  @IsIn(['1h', '2h', '24h', '48h'])
+  delai: string;
+}
+
+export class TarifDto {
+  @IsString()
+  @Length(2, 80)
+  prestation: string;
+
+  @IsInt()
+  @Min(0)
+  @Max(1_000_000_000)
+  prix: number;
+}
+
+export class ModifierRealisationDto {
+  @IsOptional()
+  @IsString()
+  @Length(2, 80)
+  titre?: string;
+
+  @IsOptional()
+  @IsString()
+  @Length(2, 40)
+  categorie?: string;
+
+  @IsOptional()
+  @IsUrl({ require_tld: false })
+  imageUrl?: string;
+}
+
 export class ModifierProfilTechnicienDto {
   @IsOptional()
   @IsString()
@@ -101,6 +189,18 @@ export class ModifierProfilTechnicienDto {
   @ArrayMaxSize(10)
   @IsString({ each: true })
   zones?: string[];
+
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => AgendaDto)
+  agenda?: AgendaDto;
+
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(20)
+  @ValidateNested({ each: true })
+  @Type(() => TarifDto)
+  tarifs?: TarifDto[];
 }
 
 export class DisponibiliteDto {

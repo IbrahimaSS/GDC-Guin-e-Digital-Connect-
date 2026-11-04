@@ -26,6 +26,8 @@ export class ReferentielsService {
             techniciens: {
               where: { niveau: { gte: 1 }, user: { statut: 'ACTIF' } },
             },
+            // Back-office : nombre de demandes publiées dans ce métier.
+            demandes: tous,
           },
         },
       },
@@ -33,6 +35,7 @@ export class ReferentielsService {
     return metiers.map(({ _count, ...m }) => ({
       ...m,
       nbTechniciens: _count.techniciens,
+      ...(tous && { nbDemandes: _count.demandes }),
     }));
   }
 
@@ -71,6 +74,28 @@ export class ReferentielsService {
       where: tous ? {} : { actif: true },
       orderBy: { nom: 'asc' },
     });
+  }
+
+  /** Back-office : zones avec les techniciens qui y interviennent et les demandes publiées. */
+  async zonesAdmin() {
+    const zones = await this.prisma.zone.findMany({
+      orderBy: { nom: 'asc' },
+      include: {
+        _count: {
+          select: {
+            techniciens: {
+              where: { niveau: { gte: 1 }, user: { statut: 'ACTIF' } },
+            },
+            demandes: true,
+          },
+        },
+      },
+    });
+    return zones.map(({ _count, ...z }) => ({
+      ...z,
+      nbTechniciens: _count.techniciens,
+      nbDemandes: _count.demandes,
+    }));
   }
 
   creerZone(dto: ZoneDto) {

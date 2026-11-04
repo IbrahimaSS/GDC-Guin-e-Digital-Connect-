@@ -15,6 +15,7 @@ import {
 } from '../common/auth.js';
 import {
   CreerSignalementDto,
+  CreerUtilisateurDto,
   FiltreDemandesAdminDto,
   FiltreUtilisateursDto,
   StatutCompteDto,
@@ -37,6 +38,11 @@ export class AdminController {
   @Get('utilisateurs')
   utilisateurs(@Query() f: FiltreUtilisateursDto) {
     return this.admin.utilisateurs(f);
+  }
+
+  @Post('utilisateurs')
+  creerUtilisateur(@Body() dto: CreerUtilisateurDto) {
+    return this.admin.creerUtilisateur(dto);
   }
 
   @Get('utilisateurs/:id')

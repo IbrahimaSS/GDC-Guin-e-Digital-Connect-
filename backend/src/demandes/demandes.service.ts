@@ -107,7 +107,9 @@ export class DemandesService {
         nom: `${tech.user.prenom} ${tech.user.nom}`,
         photoUrl: tech.user.photoUrl,
         note: tech.note,
+        nbAvis: tech.nbAvis,
         niveau: tech.niveau,
+        experience: tech.experience,
         telephone:
           d.statut === 'ENVOYEE'
             ? undefined

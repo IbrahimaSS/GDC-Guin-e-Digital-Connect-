@@ -2,7 +2,9 @@ import { Logger, ValidationPipe } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { NestFactory } from '@nestjs/core';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
+import express from 'express';
 import { AppModule } from './app.module.js';
+import { FichiersService } from './fichiers/fichiers.service.js';
 
 /** Réglages communs à l'application et aux tests e2e. */
 export function configurerApp(
@@ -22,6 +24,21 @@ export function configurerApp(
     credentials: true,
   });
   app.enableShutdownHooks();
+  // Photos publiques (profil, réalisations, demandes, messages), lues directement par le navigateur.
+  // Les pièces justificatives, elles, passent par GET /api/fichiers/pieces/:nom (connexion requise).
+  app.use(
+    '/fichiers/photos',
+    express.static(app.get(FichiersService).dossierPhotos, {
+      fallthrough: false,
+      index: false,
+      maxAge: '30d',
+      immutable: true,
+      setHeaders: (res) => {
+        res.setHeader('X-Content-Type-Options', 'nosniff');
+        res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+      },
+    }),
+  );
   return app;
 }
 

@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import type { UtilisateurConnecte } from '../common/auth.js';
 import { DemandesService } from '../demandes/demandes.service.js';
+import { ParametresService } from '../parametres/parametres.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import type { CreerAvisDto, FiltreAvisDto } from './avis.dto.js';
 
@@ -16,6 +17,7 @@ export class AvisService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly demandes: DemandesService,
+    private readonly parametres: ParametresService,
   ) {}
 
   /** Note moyenne et nombre d'avis recalculés à partir des seuls avis publiés. */
@@ -46,11 +48,24 @@ export class AvisService {
       throw new ConflictException(
         'Vous avez déjà donné votre avis sur cette mission.',
       );
+    const [delai, moderer] = await Promise.all([
+      this.parametres.get('delaiAvisJours'),
+      this.parametres.get('modererAvisNegatifs'),
+    ]);
+    if (
+      d.termineeLe &&
+      Date.now() - d.termineeLe.getTime() > delai * 86_400_000
+    )
+      throw new ConflictException(
+        `Le délai pour donner votre avis (${delai} jours après la mission) est dépassé.`,
+      );
     const avis = await this.prisma.avis.create({
       data: {
         demandeId,
         auteurId: u.id,
         technicienId: d.technicienId,
+        // Un avis de 1 ou 2 étoiles est relu par l'équipe GDC avant publication.
+        statut: moderer && dto.note <= 2 ? 'EN_ATTENTE' : 'PUBLIE',
         note: dto.note,
         criteres: dto.criteres ? { ...dto.criteres } : undefined,
         tags: dto.tags ?? [],
@@ -129,6 +144,20 @@ export class AvisService {
     return { total, page, parPage: PAR_PAGE, resultats };
   }
 
+  /** Suppression définitive (avis frauduleux) : la note du technicien est recalculée. */
+  async supprimer(id: string) {
+    const avis = await this.prisma.avis.findUnique({ where: { id } });
+    if (!avis) throw new NotFoundException('Avis introuvable.');
+    await this.prisma.$transaction([
+      this.prisma.avis.delete({ where: { id } }),
+      this.prisma.signalement.updateMany({
+        where: { type: 'avis', cible: id, statut: { not: 'RESOLU' } },
+        data: { statut: 'RESOLU', resoluLe: new Date() },
+      }),
+    ]);
+    await this.recalculer(avis.technicienId);
+  }
+
   async moderer(id: string, statut: 'PUBLIE' | 'MASQUE') {
     const avis = await this.prisma.avis
       .update({ where: { id }, data: { statut, signale: false } })
@@ -137,7 +166,7 @@ export class AvisService {
       });
     await this.prisma.signalement.updateMany({
       where: { type: 'avis', cible: id, statut: { not: 'RESOLU' } },
-      data: { statut: 'RESOLU' },
+      data: { statut: 'RESOLU', resoluLe: new Date() },
     });
     await this.recalculer(avis.technicienId);
     return avis;

@@ -51,7 +51,13 @@ interface Seed {
     bio: string;
     disponibilites: string;
     realisations: { titre: string; categorie: string; image: string }[];
-    avis: { auteur: string; note: number; commentaire: string; date: string }[];
+    avis: {
+      auteur: string;
+      note: number;
+      commentaire: string;
+      date: string;
+      mission?: string;
+    }[];
     inscrit: string;
     statut: string;
   }[];
@@ -144,6 +150,8 @@ async function vider() {
     prisma.realisation.deleteMany(),
     prisma.profilTechnicien.deleteMany(),
     prisma.session.deleteMany(),
+    prisma.adresse.deleteMany(),
+    prisma.fichier.deleteMany(),
     prisma.codeOtp.deleteMany(),
     prisma.user.deleteMany(),
     prisma.zone.deleteMany(),
@@ -426,10 +434,12 @@ async function main() {
   });
 
   // Avis vérifiés sur les missions terminées
+  const avecAvis = new Set<string>();
   for (const d of seed.demandes.filter(
     (x) => x.statut === 'terminee' && x.technicienId,
   )) {
     const avis = seed.techniciens.find((t) => t.id === d.technicienId)?.avis[0];
+    avecAvis.add(d.technicienId!);
     await prisma.avis.create({
       data: {
         demandeId: d.id,
@@ -440,6 +450,88 @@ async function main() {
         tags: ['Ponctuel', 'Travail soigné'],
         recommande: true,
         createdAt: date(d.dates[3]) ?? date(d.date),
+      },
+    });
+  }
+
+  // Historique : chaque avis de la maquette correspond à une vraie mission terminée,
+  // pour que les notes et les compteurs affichés soient ceux de la base.
+  let numeroHistorique = 900;
+  for (const t of seed.techniciens) {
+    for (const [i, a] of t.avis.entries()) {
+      // Le premier avis est déjà porté par la mission terminée de la maquette.
+      if (i === 0 && avecAvis.has(t.id)) continue;
+      if (!users.has(a.auteur)) {
+        const cree = await prisma.user.create({
+          data: {
+            ...decouper(a.auteur),
+            telephone: `+2246200001${numeroLibre++}`,
+            role: 'CLIENT',
+            typeClient: 'PARTICULIER',
+            zoneId: zones.get(t.zone),
+          },
+        });
+        users.set(a.auteur, cree.id);
+      }
+      const quand = date(a.date) ?? new Date(2026, 8, 1);
+      const zone = seed.zones.find((z) => z.nom === t.zone);
+      const metier = seed.metiers.find((m) => m.id === t.metier)!;
+      const mission = await prisma.demande.create({
+        data: {
+          numero: numeroHistorique++,
+          clientId: users.get(a.auteur)!,
+          technicienId: t.id,
+          metierId: t.metier,
+          titre: a.mission ?? `Intervention : ${metier.label.toLowerCase()}`,
+          description: `Intervention de ${metier.label.toLowerCase()} réalisée par ${t.nom}.`,
+          zoneId: zones.get(t.zone)!,
+          adresse: `${t.zone}, Conakry`,
+          lat: zone?.lat,
+          lng: zone?.lng,
+          statut: 'TERMINEE',
+          codeIntervention: String(randomInt(1000, 10000)),
+          createdAt: new Date(quand.getTime() - 3 * 86_400_000),
+          accepteeLe: new Date(quand.getTime() - 3 * 86_400_000 + 3_600_000),
+          demarreeLe: new Date(quand.getTime() - 86_400_000),
+          termineeLe: new Date(quand.getTime() - 86_400_000 + 3 * 3_600_000),
+        },
+      });
+      await prisma.avis.create({
+        data: {
+          demandeId: mission.id,
+          auteurId: users.get(a.auteur)!,
+          technicienId: t.id,
+          note: a.note,
+          commentaire: a.commentaire,
+          tags: a.note >= 5 ? ['Travail soigné'] : [],
+          recommande: a.note >= 4,
+          createdAt: quand,
+        },
+      });
+    }
+  }
+  await prisma.$executeRawUnsafe(
+    `SELECT setval(pg_get_serial_sequence('"Demande"', 'numero'), (SELECT MAX(numero) FROM "Demande"))`,
+  );
+
+  // Note moyenne, nombre d'avis et de missions : calculés à partir des données réelles.
+  for (const t of seed.techniciens) {
+    const [{ _avg, _count }, missions] = await Promise.all([
+      prisma.avis.aggregate({
+        where: { technicienId: t.id, statut: 'PUBLIE' },
+        _avg: { note: true },
+        _count: true,
+      }),
+      prisma.demande.count({
+        where: { technicienId: t.id, statut: 'TERMINEE' },
+      }),
+    ]);
+    await prisma.profilTechnicien.update({
+      where: { id: t.id },
+      data: {
+        note: Math.round((_avg.note ?? 0) * 10) / 10,
+        nbAvis: _count,
+        nbMissions: missions,
       },
     });
   }

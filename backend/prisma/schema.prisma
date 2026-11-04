@@ -44,6 +44,10 @@ model User {
   entreprise String?
   zoneId     String?
   zone       Zone?        @relation(fields: [zoneId], references: [id])
+  /// Préférences de notification : { sms, whatsapp, email, actualites } (absentes = valeurs par défaut)
+  preferences Json        @default("{}")
+  /// Compte supprimé à la demande de l'utilisateur : données personnelles effacées, historique conservé anonyme.
+  supprimeLe DateTime?
   createdAt  DateTime     @default(now())
   updatedAt  DateTime     @updatedAt
 
@@ -55,8 +59,48 @@ model User {
   notifications     Notification[]
   signalements      Signalement[]
   decisionsVerif    Verification[]    @relation("VerificationDecideur")
+  adresses          Adresse[]
+  fichiers          Fichier[]
 
   @@index([role, statut])
+}
+
+/// Adresse d'intervention enregistrée par un client (domicile, bureau…).
+model Adresse {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  label     String
+  texte     String
+  zoneId    String?
+  zone      Zone?    @relation(fields: [zoneId], references: [id])
+  lat       Float?
+  lng       Float?
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+}
+
+enum TypeFichier {
+  /// Visible publiquement (photo de profil, réalisation, photo de demande ou de message)
+  PHOTO
+  /// Pièce justificative : visible uniquement par son propriétaire et l'équipe GDC
+  PIECE
+}
+
+/// Fichier envoyé par un utilisateur, stocké sur le disque du serveur (dossier UPLOAD_DIR).
+model Fichier {
+  id             String      @id @default(cuid())
+  /// Nom du fichier sur le disque (aléatoire, avec extension)
+  nom            String      @unique
+  type           TypeFichier
+  mime           String
+  taille         Int
+  proprietaireId String
+  proprietaire   User        @relation(fields: [proprietaireId], references: [id], onDelete: Cascade)
+  createdAt      DateTime    @default(now())
+
+  @@index([proprietaireId])
 }
 
 /// Code de connexion envoyé par SMS (haché, à usage unique, durée limitée).
@@ -109,6 +153,7 @@ model Zone {
   createdAt DateTime @default(now())
 
   utilisateurs User[]
+  adresses     Adresse[]
   demandes     Demande[]
   techniciens  ProfilTechnicien[] @relation("ZonesIntervention")
 }
@@ -127,6 +172,12 @@ model ProfilTechnicien {
   /// 0 = non vérifié, 1 = identité, 2 = compétence, 3 = recommandé
   niveau         Int          @default(0)
   disponible     Boolean      @default(true)
+  /// Le technicien peut se rendre invisible dans la recherche (paramètres), sans perdre ses missions.
+  visible        Boolean      @default(true)
+  /// Calendrier : { planning: [{ jour, actif, debut, fin }], conges: [{ du, au, motif }], urgences, delai }
+  agenda         Json         @default("{}")
+  /// Tarifs indicatifs affichés sur le profil public : [{ prestation, prix }]
+  tarifs         Json         @default("[]")
   disponibilites String       @default("Lundi – Samedi (8h – 18h)")
   note           Float        @default(0)
   nbAvis         Int          @default(0)
@@ -343,6 +394,9 @@ model Signalement {
   statut    StatutSignalement @default(OUVERT)
   auteurId  String?
   auteur    User?             @relation(fields: [auteurId], references: [id])
+  /// Prise en charge et résolution par l'équipe GDC (délai de traitement)
+  priseEnChargeLe DateTime?
+  resoluLe        DateTime?
   createdAt DateTime          @default(now())
 }
 

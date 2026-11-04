@@ -5,6 +5,8 @@ import {
   IsOptional,
   IsString,
   Length,
+  Matches,
+  Max,
   MaxLength,
   Min,
 } from 'class-validator';
@@ -28,6 +30,14 @@ export class FiltreUtilisateursDto {
   @IsInt()
   @Min(1)
   page?: number;
+
+  /** Nombre de résultats par page (25 par défaut, 100 au plus) */
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(100)
+  parPage?: number;
 }
 
 export class StatutCompteDto {
@@ -53,6 +63,20 @@ export class FiltreDemandesAdminDto {
   @IsInt()
   @Min(1)
   page?: number;
+
+  /** Recherche : titre, référence, client */
+  @IsOptional()
+  @IsString()
+  @MaxLength(80)
+  q?: string;
+
+  /** Nombre de résultats par page (25 par défaut, 100 au plus) */
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(100)
+  parPage?: number;
 }
 
 export class CreerSignalementDto {
@@ -78,4 +102,31 @@ export class TraiterSignalementDto {
   @IsOptional()
   @IsIn(['basse', 'moyenne', 'haute'])
   priorite?: 'basse' | 'moyenne' | 'haute';
+}
+
+/** Compte créé par l'équipe GDC : la personne reçoit un SMS et se connecte avec son numéro. */
+export class CreerUtilisateurDto {
+  @IsString()
+  @Length(1, 60)
+  nom: string;
+
+  @IsString()
+  @Length(1, 60)
+  prenom: string;
+
+  @IsString()
+  @Matches(/^[\d\s+]{8,20}$/, { message: 'Numéro de téléphone invalide.' })
+  telephone: string;
+
+  @IsIn(['CLIENT', 'TECHNICIEN', 'ADMIN'])
+  role: 'CLIENT' | 'TECHNICIEN' | 'ADMIN';
+
+  @IsOptional()
+  @IsString()
+  zoneId?: string;
+
+  /** Obligatoire pour un technicien */
+  @IsOptional()
+  @IsString()
+  metierId?: string;
 }

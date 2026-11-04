@@ -7,6 +7,8 @@ coverage
 # Base PostgreSQL locale (embedded-postgres)
 .pgdata
 *.log
+# Fichiers envoyés par les utilisateurs
+uploads
 
 /src/generated/prisma
 src/generated

@@ -1,6 +1,8 @@
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { ParametresService } from '../parametres/parametres.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { type Canal, SmsService } from '../sms/sms.service.js';
+import { lirePreferences } from '../users/preferences.js';
 
 // Événements de la plateforme et messages envoyés au destinataire (mêmes textes que le frontend).
 export type Evenement =
@@ -121,6 +123,7 @@ export class NotificationsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly sms: SmsService,
+    private readonly parametres: ParametresService,
   ) {}
 
   /** Modèle effectif : texte et canaux personnalisés dans le back-office, sinon valeurs par défaut. */
@@ -148,9 +151,11 @@ export class NotificationsService {
     const texte = remplir(modele.texte, vars);
     const user = await this.prisma.user.findUnique({
       where: { id: destinataireId },
-      select: { telephone: true },
+      select: { telephone: true, preferences: true, supprimeLe: true },
     });
-    if (!user) return;
+    if (!user || user.supprimeLe) return;
+    // SMS / WhatsApp selon les préférences de l'utilisateur ; la notification dans l'application reste.
+    const preferences = lirePreferences(user.preferences);
 
     await this.prisma.notification.create({
       data: {
@@ -162,7 +167,11 @@ export class NotificationsService {
       },
     });
 
-    for (const canal of modele.canaux) {
+    // Canal coupé pour toute la plateforme (paramètres) ou par l'utilisateur (préférences).
+    const canaux = await this.parametres.get('canaux');
+    for (const canal of modele.canaux.filter(
+      (c) => canaux[c] && preferences[c],
+    )) {
       let statut = 'envoye';
       let erreur: string | undefined;
       try {
@@ -245,5 +254,37 @@ export class NotificationsService {
       orderBy: { createdAt: 'desc' },
       take: 200,
     });
+  }
+
+  /**
+   * Envoie le modèle, rempli avec des valeurs d'exemple, au numéro de l'administrateur
+   * (sur chacun de ses canaux). Aucune notification n'est créée dans l'application.
+   */
+  async tester(evenement: Evenement, adminId: string) {
+    const admin = await this.prisma.user.findUniqueOrThrow({
+      where: { id: adminId },
+      select: { telephone: true },
+    });
+    const modele = await this.modele(evenement);
+    const texte = remplir(modele.texte, {
+      client: 'Mohamed Camara',
+      technicien: 'Mamadou Diallo',
+      mission: 'Réparation de climatisation',
+      montant: '350 000 GNF',
+      code: '4821',
+      resultat: 'approuvée',
+    });
+    for (const canal of modele.canaux) {
+      await this.sms.envoyer({ canal, numero: admin.telephone, texte });
+      await this.prisma.envoiNotification.create({
+        data: {
+          evenement: `test:${evenement}`,
+          canal,
+          numero: admin.telephone,
+          texte,
+        },
+      });
+    }
+    return { envoyes: modele.canaux.length, numero: admin.telephone };
   }
 }

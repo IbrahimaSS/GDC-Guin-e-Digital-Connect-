@@ -1,17 +1,15 @@
-import { Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import {
   ConnectedSocket,
   MessageBody,
-  OnGatewayConnection,
   OnGatewayInit,
   SubscribeMessage,
   WebSocketGateway,
   WebSocketServer,
   WsException,
 } from '@nestjs/websockets';
-import type { Server, Socket } from 'socket.io';
+import type { Namespace, Socket } from 'socket.io';
 import type { UtilisateurConnecte } from '../common/auth.js';
 import type { Role } from '../generated/prisma/client.js';
 import { MessagesService, salon } from './messages.service.js';
@@ -25,9 +23,8 @@ import { MessagesService, salon } from './messages.service.js';
   namespace: '/messagerie',
   cors: { origin: true, credentials: true },
 })
-export class MessagesGateway implements OnGatewayInit, OnGatewayConnection {
-  private readonly log = new Logger(MessagesGateway.name);
-  @WebSocketServer() serveur: Server;
+export class MessagesGateway implements OnGatewayInit {
+  @WebSocketServer() serveur: Namespace;
 
   constructor(
     private readonly messages: MessagesService,
@@ -35,32 +32,35 @@ export class MessagesGateway implements OnGatewayInit, OnGatewayConnection {
     private readonly config: ConfigService,
   ) {}
 
-  afterInit() {
+  afterInit(espace: Namespace) {
     this.messages.diffuseur = {
       diffuser: (s, evenement, donnees) =>
         this.serveur.to(s).emit(evenement, donnees),
     };
+    // Le jeton est vérifié AVANT d'accepter la connexion : ainsi, l'utilisateur est connu dès le
+    // premier événement (« rejoindre » est envoyé par le client aussitôt connecté). En cas de refus,
+    // le client reçoit « connect_error » avec ce message.
+    espace.use((socket, suivant) => {
+      this.authentifier(socket)
+        .then(() => suivant())
+        .catch(() => suivant(new Error('Session expirée ou invalide.')));
+    });
   }
 
-  async handleConnection(socket: Socket) {
+  private async authentifier(socket: Socket) {
     const jeton =
       (socket.handshake.auth as { token?: string })?.token ??
       socket.handshake.headers.authorization?.replace(/^Bearer /, '');
-    try {
-      const charge = await this.jwt.verifyAsync<{
-        sub: string;
-        role: Role;
-        type: string;
-      }>(jeton ?? '', { secret: this.config.getOrThrow('jwt.accessSecret') });
-      if (charge.type !== 'acces') throw new Error();
-      socket.data.user = {
-        id: charge.sub,
-        role: charge.role,
-      } satisfies UtilisateurConnecte;
-    } catch {
-      socket.emit('erreur', { message: 'Session expirée ou invalide.' });
-      socket.disconnect(true);
-    }
+    const charge = await this.jwt.verifyAsync<{
+      sub: string;
+      role: Role;
+      type: string;
+    }>(jeton ?? '', { secret: this.config.getOrThrow('jwt.accessSecret') });
+    if (charge.type !== 'acces') throw new Error('Jeton invalide');
+    socket.data.user = {
+      id: charge.sub,
+      role: charge.role,
+    } satisfies UtilisateurConnecte;
   }
 
   @SubscribeMessage('rejoindre')
@@ -96,11 +96,9 @@ export class MessagesGateway implements OnGatewayInit, OnGatewayConnection {
   ) {
     const s = corps?.demandeId && salon(corps.demandeId);
     if (s && socket.rooms.has(s))
-      socket
-        .to(s)
-        .emit('ecrit', {
-          demandeId: corps.demandeId,
-          auteurId: socket.data.user?.id,
-        });
+      socket.to(s).emit('ecrit', {
+        demandeId: corps.demandeId,
+        auteurId: socket.data.user?.id,
+      });
   }
 }

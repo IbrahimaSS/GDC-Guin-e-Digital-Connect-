@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   ForbiddenException,
   HttpException,
   HttpStatus,
@@ -17,13 +18,14 @@ import {
 } from '../common/securite.js';
 import { normaliserTelephone } from '../common/telephone.js';
 import type { Role } from '../generated/prisma/client.js';
+import { ParametresService } from '../parametres/parametres.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { SmsService } from '../sms/sms.service.js';
 import {
   INCLURE_UTILISATEUR,
   presenterUtilisateur,
 } from '../users/presentation.js';
-import type { InscriptionDto } from './auth.dto.js';
+import type { ButCode, InscriptionDto } from './auth.dto.js';
 
 const MAX_CODES_PAR_PERIODE = 3;
 const PERIODE_CODES_MS = 10 * 60 * 1000;
@@ -45,6 +47,7 @@ export class AuthService {
     private readonly jwt: JwtService,
     private readonly config: ConfigService,
     private readonly sms: SmsService,
+    private readonly parametres: ParametresService,
   ) {}
 
   private empreinteCode(telephone: string, code: string) {
@@ -54,8 +57,27 @@ export class AuthService {
   }
 
   /** Envoie un code de connexion à 6 chiffres par SMS (3 demandes maximum par 10 minutes). */
-  async demanderCode(saisie: string) {
+  async demanderCode(saisie: string, but?: ButCode) {
     const telephone = normaliserTelephone(saisie);
+    // Pas de SMS inutile : on oriente tout de suite vers l'inscription ou la connexion.
+    if (but) {
+      const compte = await this.prisma.user.findUnique({
+        where: { telephone },
+        select: { statut: true },
+      });
+      if (but === 'connexion' && !compte)
+        throw new NotFoundException(
+          "Ce numéro n'a pas encore de compte GDC. Inscrivez-vous pour continuer.",
+        );
+      if (but === 'inscription' && compte)
+        throw new ConflictException(
+          'Ce numéro a déjà un compte GDC. Connectez-vous.',
+        );
+      if (compte?.statut === 'SUSPENDU')
+        throw new ForbiddenException(
+          'Ce compte est suspendu. Contactez le support.',
+        );
+    }
     const recents = await this.prisma.codeOtp.count({
       where: {
         telephone,
@@ -82,7 +104,11 @@ export class AuthService {
       numero: telephone,
       texte: `GDC : votre code de connexion est ${code}. Valable ${ttl} minutes. Ne le communiquez à personne.`,
     });
-    return { expireDansSecondes: ttl * 60 };
+    // En développement, aucun SMS ne part (pilote console) : le code est renvoyé pour pouvoir tester.
+    const exposer =
+      this.config.get('smsDriver') === 'console' &&
+      process.env.NODE_ENV !== 'production';
+    return { expireDansSecondes: ttl * 60, ...(exposer && { codeDev: code }) };
   }
 
   /**
@@ -131,6 +157,10 @@ export class AuthService {
 
   /** Création du compte après vérification du numéro. */
   async inscrire(dto: InscriptionDto, appareil?: string) {
+    if (!(await this.parametres.get('inscriptionsOuvertes')))
+      throw new ForbiddenException(
+        'Les inscriptions sont momentanément fermées. Réessayez plus tard.',
+      );
     let telephone: string;
     try {
       const charge = await this.jwt.verifyAsync<{

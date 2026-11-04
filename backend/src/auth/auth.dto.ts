@@ -16,14 +16,27 @@ import {
   ValidateNested,
 } from 'class-validator';
 
-export class DemanderCodeDto {
+class TelephoneDto {
   /** Numéro mobile guinéen, ex. « 620 12 34 56 » */
   @IsString()
   @MaxLength(20)
   telephone: string;
 }
 
-export class VerifierCodeDto extends DemanderCodeDto {
+export type ButCode = 'connexion' | 'inscription';
+
+export class DemanderCodeDto extends TelephoneDto {
+  /**
+   * « connexion » : aucun code si le numéro n'a pas de compte (404).
+   * « inscription » : aucun code si le numéro a déjà un compte (409).
+   * Absent : le code est envoyé dans tous les cas.
+   */
+  @IsOptional()
+  @IsIn(['connexion', 'inscription'])
+  but?: ButCode;
+}
+
+export class VerifierCodeDto extends TelephoneDto {
   @Matches(/^\d{6}$/, { message: 'Le code contient 6 chiffres.' })
   code: string;
 }

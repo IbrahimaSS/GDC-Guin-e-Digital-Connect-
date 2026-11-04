@@ -8,6 +8,7 @@ import {
 import type { UtilisateurConnecte } from '../common/auth.js';
 import { formaterTelephone } from '../common/telephone.js';
 import { NotificationsService } from '../notifications/notifications.service.js';
+import { ParametresService } from '../parametres/parametres.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import type {
   DeciderVerificationDto,
@@ -19,6 +20,7 @@ export class VerificationsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly notifications: NotificationsService,
+    private readonly parametres: ParametresService,
   ) {}
 
   private async profil(userId: string) {
@@ -37,6 +39,17 @@ export class VerificationsService {
       throw new BadRequestException(
         `Prochaine étape : niveau ${t.niveau + 1}.`,
       );
+    // Niveau « Recommandé » : seuils fixés dans les paramètres de la plateforme.
+    if (dto.niveau === 3) {
+      const [missions, note] = await Promise.all([
+        this.parametres.get('missionsNiveau3'),
+        this.parametres.get('noteNiveau3'),
+      ]);
+      if (t.nbMissions < missions || t.note < note)
+        throw new BadRequestException(
+          `Le niveau 3 demande au moins ${missions} missions réussies et une note de ${note}/5 (vous : ${t.nbMissions} missions, ${t.note}/5).`,
+        );
+    }
     const enCours = await this.prisma.verification.count({
       where: { technicienId: t.id, statut: { in: ['EN_ATTENTE', 'EN_COURS'] } },
     });

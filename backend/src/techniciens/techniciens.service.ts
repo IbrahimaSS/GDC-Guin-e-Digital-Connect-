@@ -10,6 +10,7 @@ import { PrismaService } from '../prisma/prisma.service.js';
 import type {
   DisponibiliteDto,
   ModifierProfilTechnicienDto,
+  ModifierRealisationDto,
   RealisationDto,
   RechercheTechniciensDto,
 } from './techniciens.dto.js';
@@ -53,6 +54,7 @@ function presenterCarte(t: Carte) {
 /** Un technicien n'apparaît publiquement qu'avec un compte actif et une identité vérifiée. */
 const VISIBLE: Prisma.ProfilTechnicienWhereInput = {
   niveau: { gte: 1 },
+  visible: true,
   user: { statut: 'ACTIF' },
 };
 
@@ -147,6 +149,7 @@ export class TechniciensService {
       ...presenterCarte(t),
       bio: t.bio,
       disponibilites: t.disponibilites,
+      tarifs: t.tarifs,
       telephone: formaterTelephone(t.user.telephone),
       inscritLe: t.user.createdAt,
       realisations: t.realisations,
@@ -175,7 +178,17 @@ export class TechniciensService {
   }
 
   async modifier(userId: string, dto: ModifierProfilTechnicienDto) {
-    const { zones, ...champs } = dto;
+    const { zones, agenda, tarifs, ...autres } = dto;
+    // Calendrier et tarifs sont enregistrés tels quels (JSON), après validation de leur forme.
+    const champs = {
+      ...autres,
+      ...(agenda && {
+        agenda: JSON.parse(JSON.stringify(agenda)) as Prisma.InputJsonValue,
+      }),
+      ...(tarifs && {
+        tarifs: JSON.parse(JSON.stringify(tarifs)) as Prisma.InputJsonValue,
+      }),
+    };
     if (
       dto.metierId &&
       !(await this.prisma.metier.findUnique({ where: { id: dto.metierId } }))
@@ -208,6 +221,20 @@ export class TechniciensService {
     return this.prisma.realisation.create({
       data: { ...dto, technicienId: t.id },
     });
+  }
+
+  async modifierRealisation(
+    userId: string,
+    id: string,
+    dto: ModifierRealisationDto,
+  ) {
+    const t = await this.monProfil(userId);
+    const { count } = await this.prisma.realisation.updateMany({
+      where: { id, technicienId: t.id },
+      data: dto,
+    });
+    if (!count) throw new NotFoundException('Réalisation introuvable.');
+    return this.prisma.realisation.findUniqueOrThrow({ where: { id } });
   }
 
   async supprimerRealisation(userId: string, id: string) {
