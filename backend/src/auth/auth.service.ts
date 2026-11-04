@@ -18,6 +18,7 @@ import {
 } from '../common/securite.js';
 import { normaliserTelephone } from '../common/telephone.js';
 import type { Role } from '../generated/prisma/client.js';
+import { ParametresService } from '../parametres/parametres.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { SmsService } from '../sms/sms.service.js';
 import {
@@ -46,6 +47,7 @@ export class AuthService {
     private readonly jwt: JwtService,
     private readonly config: ConfigService,
     private readonly sms: SmsService,
+    private readonly parametres: ParametresService,
   ) {}
 
   private empreinteCode(telephone: string, code: string) {
@@ -155,6 +157,10 @@ export class AuthService {
 
   /** Création du compte après vérification du numéro. */
   async inscrire(dto: InscriptionDto, appareil?: string) {
+    if (!(await this.parametres.get('inscriptionsOuvertes')))
+      throw new ForbiddenException(
+        'Les inscriptions sont momentanément fermées. Réessayez plus tard.',
+      );
     let telephone: string;
     try {
       const charge = await this.jwt.verifyAsync<{

@@ -64,7 +64,7 @@ export class AdminReferentielsController {
 
   @Get('zones')
   zones() {
-    return this.ref.zones(true);
+    return this.ref.zonesAdmin();
   }
 
   @Post('zones')

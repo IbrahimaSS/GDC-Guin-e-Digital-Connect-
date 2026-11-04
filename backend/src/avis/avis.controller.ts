@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   HttpCode,
   Param,
@@ -83,5 +84,11 @@ export class AdminAvisController {
   @Patch(':id')
   moderer(@Param('id') id: string, @Body() dto: ModererAvisDto) {
     return this.avis.moderer(id, dto.statut);
+  }
+
+  @Delete(':id')
+  @HttpCode(204)
+  supprimer(@Param('id') id: string) {
+    return this.avis.supprimer(id);
   }
 }

@@ -69,6 +69,16 @@ export class PaiementsService {
       throw new ConflictException(
         'Un paiement est déjà enregistré pour ce devis.',
       );
+    const moyens = await this.parametres.get('moyensPaiement');
+    const actif = {
+      ORANGE: moyens.orange,
+      MTN: moyens.mtn,
+      ESPECES: moyens.especes,
+    }[dto.moyen];
+    if (!actif)
+      throw new BadRequestException(
+        'Ce moyen de paiement est momentanément indisponible.',
+      );
     if (dto.moyen !== 'ESPECES' && !dto.numero)
       throw new BadRequestException(
         'Indiquez le numéro du compte mobile money.',

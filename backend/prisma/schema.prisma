@@ -394,6 +394,9 @@ model Signalement {
   statut    StatutSignalement @default(OUVERT)
   auteurId  String?
   auteur    User?             @relation(fields: [auteurId], references: [id])
+  /// Prise en charge et résolution par l'équipe GDC (délai de traitement)
+  priseEnChargeLe DateTime?
+  resoluLe        DateTime?
   createdAt DateTime          @default(now())
 }
 

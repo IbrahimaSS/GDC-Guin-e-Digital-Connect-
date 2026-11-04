@@ -1,4 +1,5 @@
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { ParametresService } from '../parametres/parametres.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { type Canal, SmsService } from '../sms/sms.service.js';
 import { lirePreferences } from '../users/preferences.js';
@@ -122,6 +123,7 @@ export class NotificationsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly sms: SmsService,
+    private readonly parametres: ParametresService,
   ) {}
 
   /** Modèle effectif : texte et canaux personnalisés dans le back-office, sinon valeurs par défaut. */
@@ -165,7 +167,11 @@ export class NotificationsService {
       },
     });
 
-    for (const canal of modele.canaux.filter((c) => preferences[c])) {
+    // Canal coupé pour toute la plateforme (paramètres) ou par l'utilisateur (préférences).
+    const canaux = await this.parametres.get('canaux');
+    for (const canal of modele.canaux.filter(
+      (c) => canaux[c] && preferences[c],
+    )) {
       let statut = 'envoye';
       let erreur: string | undefined;
       try {
