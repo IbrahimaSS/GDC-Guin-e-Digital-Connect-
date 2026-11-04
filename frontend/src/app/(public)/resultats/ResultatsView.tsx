@@ -9,12 +9,14 @@ import TechnicienProCard from "@/components/shared/TechnicienProCard";
 import { Button, Card, cn, EmptyState, LinkButton, Select } from "@/components/ui";
 import { apiActive } from "@/lib/api";
 import { idZone, useZonesApi } from "@/lib/auth";
-import { getMetier, METIERS, TECHNICIENS, ZONES } from "@/lib/data";
+import { getMetier, TECHNICIENS, ZONES } from "@/lib/data";
+import { useMetiers } from "@/lib/plateforme";
 import { useRechercheTechniciens } from "@/lib/techniciens";
 
 type Tri = "pertinence" | "note" | "avis" | "experience";
 
 export default function ResultatsView() {
+  const metiers = useMetiers();
   const params = useSearchParams();
   const router = useRouter();
   const pathname = usePathname();
@@ -72,7 +74,7 @@ export default function ResultatsView() {
           <Search className="size-4 text-slate-400" />
           <select value={metier} onChange={(e) => setParam("metier", e.target.value)} className="w-full cursor-pointer bg-transparent py-3 text-sm font-medium outline-none" aria-label="Métier">
             <option value="">Tous les métiers</option>
-            {METIERS.map((m) => (
+            {metiers.map((m) => (
               <option key={m.id} value={m.id}>
                 {m.label}
               </option>

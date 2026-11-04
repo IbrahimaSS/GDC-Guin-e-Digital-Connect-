@@ -8,6 +8,9 @@ import ModelesNotifications from "@/components/shared/ModelesNotifications";
 import { toast } from "@/components/motion/Toaster";
 import { Button, Card, cn, Field, Input, Logo, PageHeader, Select, Textarea } from "@/components/ui";
 import { Tabs, Toggle } from "@/components/ui/interactive";
+import { api, apiActive, texteErreur } from "@/lib/api";
+import { rafraichirParametres } from "@/lib/plateforme";
+import { useApi } from "@/lib/useApi";
 
 type Onglet = "general" | "verification" | "paiements" | "notifications" | "identite";
 
@@ -36,21 +39,100 @@ const VALEURS: { icon: LucideIcon; label: string }[] = [
   { icon: Lightbulb, label: "Innovation" },
 ];
 
+/** Paramètres modifiables sur cette page (les logos se gèrent dans « Identité visuelle »). */
+interface Parametres {
+  nomPlateforme: string;
+  slogan: string;
+  messageAccueil: string;
+  telephoneSupport: string;
+  emailSupport: string;
+  inscriptionsOuvertes: boolean;
+  maintenance: boolean;
+  /** Taux : 0.05 = 5 % */
+  commission: number;
+  fraisDeplacementDefaut: number;
+  moyensPaiement: { orange: boolean; mtn: boolean; especes: boolean };
+  abonnementPro: number;
+  offreEntreprises: "devis" | "forfait";
+  missionsNiveau3: number;
+  noteNiveau3: number;
+  validiteVerificationMois: number;
+  modererAvisNegatifs: boolean;
+  delaiAvisJours: number;
+  canaux: { sms: boolean; whatsapp: boolean; email: boolean };
+  expediteurSms: string;
+}
+
+const DEFAUT: Parametres = {
+  nomPlateforme: "GDC – Guinée Digital Connect",
+  slogan: "Les compétences au service des opportunités.",
+  messageAccueil: "Bienvenue sur GDC ! Trouvez le bon professionnel près de chez vous.",
+  telephoneSupport: "+224 620 00 00 00",
+  emailSupport: "support@gdc.gn",
+  inscriptionsOuvertes: true,
+  maintenance: false,
+  commission: 0.05,
+  fraisDeplacementDefaut: 50000,
+  moyensPaiement: { orange: true, mtn: true, especes: true },
+  abonnementPro: 50000,
+  offreEntreprises: "devis",
+  missionsNiveau3: 20,
+  noteNiveau3: 4.5,
+  validiteVerificationMois: 24,
+  modererAvisNegatifs: true,
+  delaiAvisJours: 14,
+  canaux: { sms: true, whatsapp: true, email: false },
+  expediteurSms: "GDC",
+};
+const CLES = Object.keys(DEFAUT) as (keyof Parametres)[];
+
+/** Valeur d'un champ numérique (NaN si vide, refusé à l'enregistrement). */
+const nombre = (v: string) => (v.trim() === "" ? NaN : Number(v));
+const champ = (n: number) => (Number.isNaN(n) ? "" : n);
+
+/**
+ * Paramètres du serveur (ou de la maquette en démonstration). Les modifications restent dans un
+ * brouillon jusqu'à « Enregistrer », qui n'envoie que les valeurs changées.
+ */
+function useParametres() {
+  const { donnees, chargement } = useApi<Parametres>(apiActive ? "/admin/parametres" : null);
+  const [enregistres, setEnregistres] = useState<Parametres | null>(null);
+  const [brouillon, setBrouillon] = useState<Partial<Parametres>>({});
+  const base: Parametres = { ...DEFAUT, ...(enregistres ?? (apiActive ? donnees : null) ?? {}) };
+  const p: Parametres = { ...base, ...brouillon };
+  const modifies = CLES.filter((k) => k in brouillon && JSON.stringify(brouillon[k]) !== JSON.stringify(base[k]));
+  const pret = !apiActive || (!chargement && Boolean(donnees));
+  return { p, modifies, pret, setBrouillon, setEnregistres };
+}
+
 export default function ParametresPlateforme() {
   const [onglet, setOnglet] = useState<Onglet>("general");
-  const [opts, setOpts] = useState({
-    maintenance: false,
-    inscriptions: true,
-    verifAuto: true,
-    avisModeration: true,
-    orange: true,
-    mtn: true,
-    especes: true,
-    sms: true,
-    whatsapp: true,
-    email: false,
-  });
-  const set = (k: keyof typeof opts) => (v: boolean) => setOpts({ ...opts, [k]: v });
+  const { p, modifies, pret, setBrouillon, setEnregistres } = useParametres();
+  const [envoi, setEnvoi] = useState(false);
+  const maj = <K extends keyof Parametres>(k: K, v: Parametres[K]) => setBrouillon((b) => ({ ...b, [k]: v }));
+  const moyen = (k: keyof Parametres["moyensPaiement"]) => (v: boolean) => maj("moyensPaiement", { ...p.moyensPaiement, [k]: v });
+  const canal = (k: keyof Parametres["canaux"]) => (v: boolean) => maj("canaux", { ...p.canaux, [k]: v });
+
+  async function enregistrer() {
+    if (!modifies.length) return toast("Aucune modification à enregistrer", "info");
+    const valeurs = Object.fromEntries(modifies.map((k) => [k, p[k]]));
+    if (Object.values(valeurs).some((v) => typeof v === "number" && Number.isNaN(v))) return toast("Un champ numérique est vide.", "error");
+    if (apiActive) {
+      setEnvoi(true);
+      try {
+        setEnregistres(await api<Parametres>("/admin/parametres", { methode: "PUT", corps: valeurs }));
+        void rafraichirParametres(); // en-tête du site, inscription, paiement…
+      } catch (e) {
+        setEnvoi(false);
+        return toast(texteErreur(e), "error");
+      }
+      setEnvoi(false);
+    } else {
+      setEnregistres(p);
+    }
+    setBrouillon({});
+    toast("Paramètres de la plateforme enregistrés");
+  }
 
   return (
     <>
@@ -58,8 +140,8 @@ export default function ParametresPlateforme() {
         title="Paramètres de la plateforme"
         subtitle="Configuration générale de GDC."
         actions={
-          <Button onClick={() => toast("Paramètres de la plateforme enregistrés")}>
-            <Save className="size-4" /> Enregistrer
+          <Button onClick={enregistrer} disabled={envoi || !pret}>
+            <Save className="size-4" /> {envoi ? "Enregistrement…" : modifies.length ? `Enregistrer (${modifies.length})` : "Enregistrer"}
           </Button>
         }
       />
@@ -81,30 +163,30 @@ export default function ParametresPlateforme() {
           <>
             <Bloc icon={Building2} title="Informations générales">
               <Field label="Nom de la plateforme">
-                <Input defaultValue="GDC – Guinée Digital Connect" />
+                <Input value={p.nomPlateforme} onChange={(e) => maj("nomPlateforme", e.target.value)} />
               </Field>
               <Field label="Slogan">
-                <Input defaultValue="Les compétences au service des opportunités." />
+                <Input value={p.slogan} onChange={(e) => maj("slogan", e.target.value)} />
               </Field>
               <div className="grid gap-4 sm:grid-cols-2">
                 <Field label="Téléphone support">
-                  <Input defaultValue="+224 620 00 00 00" />
+                  <Input value={p.telephoneSupport} onChange={(e) => maj("telephoneSupport", e.target.value)} />
                 </Field>
                 <Field label="E-mail support">
-                  <Input defaultValue="support@gdc.gn" />
+                  <Input type="email" value={p.emailSupport} onChange={(e) => maj("emailSupport", e.target.value)} />
                 </Field>
               </div>
             </Bloc>
             <Bloc icon={Wrench} title="Fonctionnement">
-              <Toggle checked={opts.inscriptions} onChange={set("inscriptions")} label="Inscriptions ouvertes" description="Autoriser la création de nouveaux comptes." />
-              <Toggle checked={opts.maintenance} onChange={set("maintenance")} label="Mode maintenance" description="Affiche une page d'information aux visiteurs." />
-              <Field label="Langue par défaut">
-                <Select defaultValue="fr">
-                  <option value="fr">Français</option>
-                </Select>
-              </Field>
+              <Toggle
+                checked={p.inscriptionsOuvertes}
+                onChange={(v) => maj("inscriptionsOuvertes", v)}
+                label="Inscriptions ouvertes"
+                description="Autoriser la création de nouveaux comptes."
+              />
+              <Toggle checked={p.maintenance} onChange={(v) => maj("maintenance", v)} label="Mode maintenance" description="Affiche un bandeau d'information aux visiteurs." />
               <Field label="Message d'accueil">
-                <Textarea className="min-h-20" defaultValue="Bienvenue sur GDC ! Trouvez le bon professionnel près de chez vous." />
+                <Textarea className="min-h-20" value={p.messageAccueil} onChange={(e) => maj("messageAccueil", e.target.value)} />
               </Field>
             </Bloc>
           </>
@@ -113,21 +195,25 @@ export default function ParametresPlateforme() {
         {onglet === "verification" && (
           <>
             <Bloc icon={ShieldCheck} title="Règles de vérification">
-              <Toggle checked={opts.verifAuto} onChange={set("verifAuto")} label="Contrôle automatique des pièces" description="Lecture et contrôle de cohérence avant revue humaine." />
-              <Field label="Missions minimum pour le niveau 3">
-                <Input type="number" defaultValue={20} />
+              <Field label="Missions minimum pour le niveau 3" hint="Le niveau 3 (Expert) est attribué automatiquement dès que les deux seuils sont atteints.">
+                <Input type="number" min={1} value={champ(p.missionsNiveau3)} onChange={(e) => maj("missionsNiveau3", nombre(e.target.value))} />
               </Field>
               <Field label="Note minimum pour le niveau 3">
-                <Input type="number" step={0.1} defaultValue={4.5} />
+                <Input type="number" step={0.1} min={1} max={5} value={champ(p.noteNiveau3)} onChange={(e) => maj("noteNiveau3", nombre(e.target.value))} />
               </Field>
               <Field label="Validité d'une vérification (mois)">
-                <Input type="number" defaultValue={24} />
+                <Input type="number" min={1} value={champ(p.validiteVerificationMois)} onChange={(e) => maj("validiteVerificationMois", nombre(e.target.value))} />
               </Field>
             </Bloc>
             <Bloc icon={MessageSquare} title="Avis clients">
-              <Toggle checked={opts.avisModeration} onChange={set("avisModeration")} label="Modérer les avis de 1 et 2 étoiles" description="Revue manuelle avant publication." />
+              <Toggle
+                checked={p.modererAvisNegatifs}
+                onChange={(v) => maj("modererAvisNegatifs", v)}
+                label="Modérer les avis de 1 et 2 étoiles"
+                description="Revue manuelle avant publication."
+              />
               <Field label="Délai pour laisser un avis (jours)">
-                <Input type="number" defaultValue={14} />
+                <Input type="number" min={1} value={champ(p.delaiAvisJours)} onChange={(e) => maj("delaiAvisJours", nombre(e.target.value))} />
               </Field>
             </Bloc>
           </>
@@ -136,19 +222,29 @@ export default function ParametresPlateforme() {
         {onglet === "paiements" && (
           <>
             <Bloc icon={CreditCard} title="Moyens de paiement">
-              <Toggle checked={opts.orange} onChange={set("orange")} label="Orange Money" description="Paiement mobile, confirmation instantanée." />
-              <Toggle checked={opts.mtn} onChange={set("mtn")} label="MTN Mobile Money" description="Paiement mobile, confirmation instantanée." />
-              <Toggle checked={opts.especes} onChange={set("especes")} label="Espèces" description="Paiement direct au technicien, déclaré dans l'application." />
+              <Toggle checked={p.moyensPaiement.orange} onChange={moyen("orange")} label="Orange Money" description="Paiement mobile, confirmation instantanée." />
+              <Toggle checked={p.moyensPaiement.mtn} onChange={moyen("mtn")} label="MTN Mobile Money" description="Paiement mobile, confirmation instantanée." />
+              <Toggle checked={p.moyensPaiement.especes} onChange={moyen("especes")} label="Espèces" description="Paiement direct au technicien, déclaré dans l'application." />
             </Bloc>
             <Bloc icon={Percent} title="Modèle économique">
               <Field label="Commission sur les missions (%)" hint="Phase pilote : commission réduite pour favoriser l'adoption.">
-                <Input type="number" defaultValue={5} />
+                <Input
+                  type="number"
+                  step={0.5}
+                  min={0}
+                  max={30}
+                  value={Number.isNaN(p.commission) ? "" : Math.round(p.commission * 1000) / 10}
+                  onChange={(e) => maj("commission", nombre(e.target.value) / 100)}
+                />
+              </Field>
+              <Field label="Frais de déplacement par défaut (GNF)">
+                <Input type="number" min={0} step={5000} value={champ(p.fraisDeplacementDefaut)} onChange={(e) => maj("fraisDeplacementDefaut", nombre(e.target.value))} />
               </Field>
               <Field label="Abonnement Pro (GNF / mois)">
-                <Input type="number" defaultValue={50000} />
+                <Input type="number" min={0} step={5000} value={champ(p.abonnementPro)} onChange={(e) => maj("abonnementPro", nombre(e.target.value))} />
               </Field>
               <Field label="Offre Entreprises">
-                <Select defaultValue="devis">
+                <Select value={p.offreEntreprises} onChange={(e) => maj("offreEntreprises", e.target.value as Parametres["offreEntreprises"])}>
                   <option value="devis">Sur devis</option>
                   <option value="forfait">Forfait mensuel</option>
                 </Select>
@@ -159,11 +255,11 @@ export default function ParametresPlateforme() {
 
         {onglet === "notifications" && (
           <Bloc icon={MessageSquare} title="Canaux de notification">
-            <Toggle checked={opts.sms} onChange={set("sms")} label="SMS" description="Codes de connexion, nouvelles demandes, rappels." />
-            <Toggle checked={opts.whatsapp} onChange={set("whatsapp")} label="WhatsApp Business" description="Messages et suivi des missions." />
-            <Toggle checked={opts.email} onChange={set("email")} label="E-mail" description="Récapitulatifs et factures." />
-            <Field label="Expéditeur SMS">
-              <Input defaultValue="GDC" />
+            <Toggle checked={p.canaux.sms} onChange={canal("sms")} label="SMS" description="Codes de connexion, nouvelles demandes, rappels." />
+            <Toggle checked={p.canaux.whatsapp} onChange={canal("whatsapp")} label="WhatsApp Business" description="Messages et suivi des missions." />
+            <Toggle checked={p.canaux.email} onChange={canal("email")} label="E-mail" description="Récapitulatifs et factures." />
+            <Field label="Expéditeur SMS" hint="11 caractères au plus : le nom affiché sur le téléphone.">
+              <Input maxLength={11} value={p.expediteurSms} onChange={(e) => maj("expediteurSms", e.target.value)} />
             </Field>
           </Bloc>
         )}

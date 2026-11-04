@@ -765,7 +765,12 @@ export const TECHNICIEN_CONNECTE = TECHNICIENS[0];
 
 /* ------------------------------------------------------------------- Helpers */
 
-export const getMetier = (id: MetierId) => METIERS.find((m) => m.id === id)!;
+/** Métiers connus de l'API (ajoutés par le back-office), renseignés par useMetiers(). */
+export const METIERS_API = new Map<string, Metier>();
+
+/** Métier par identifiant : celui de l'API s'il est connu, sinon celui de la maquette (jamais indéfini). */
+export const getMetier = (id: MetierId): Metier =>
+  METIERS_API.get(id) ?? METIERS.find((m) => m.id === id) ?? { id, label: id.charAt(0).toUpperCase() + id.slice(1).replace(/-/g, " "), techniciens: 0, demandes: 0, actif: true };
 export const getTechnicien = (id: string) => TECHNICIENS.find((t) => t.id === id);
 export const getDemande = (id: string) => TOUTES_DEMANDES.find((d) => d.id === id);
 

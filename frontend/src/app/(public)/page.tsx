@@ -1,12 +1,13 @@
 import { ArrowRight, BadgeCheck, ClipboardList, MessageSquareText, MousePointerClick, ShieldCheck, Smartphone } from "lucide-react";
 import Link from "next/link";
+import GrilleMetiers from "@/components/home/GrilleMetiers";
 import Hero from "@/components/home/Hero";
+import MeilleursTechniciens from "@/components/home/MeilleursTechniciens";
 import HowItWorks from "@/components/home/HowItWorks";
 import PublierDemande from "@/components/home/PublierDemande";
 import Reveal from "@/components/motion/Reveal";
-import TechnicienProCard from "@/components/shared/TechnicienProCard";
 import { cn, GuineeFlag, LinkButton, MetierIcon, Stars } from "@/components/ui";
-import { METIERS, NIVEAUX, TECHNICIENS, type Niveau } from "@/lib/data";
+import { NIVEAUX, type Niveau } from "@/lib/data";
 
 const ATOUTS = [
   { icon: MousePointerClick, titre: "Simple et rapide", texte: "Un professionnel trouvé en quelques clics." },
@@ -28,8 +29,7 @@ const NIVEAU_STYLES: Record<Niveau, string> = {
 };
 
 export default function Accueil() {
-  const top = [...TECHNICIENS].sort((a, b) => b.note - a.note).slice(0, 4);
-
+  
   return (
     <>
       <Hero />
@@ -62,21 +62,7 @@ export default function Accueil() {
             Tous les métiers <ArrowRight className="size-4 transition-all" />
           </Link>
         </div>
-        <Reveal className="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-8" stagger={0.05} scale={0.9} y={10}>
-          {METIERS.map((m) => (
-            <Link
-              key={m.id}
-              href={`/resultats?metier=${m.id}`}
-              className="group flex flex-col items-center gap-3 rounded-2xl bg-white p-5 text-center shadow-sm ring-1 ring-slate-200/70 transition duration-300 hover:-translate-y-1.5 hover:shadow-xl hover:shadow-accent-500/10 hover:ring-accent-500"
-            >
-              <span className="rounded-2xl bg-accent-50 p-3.5 text-accent-500 transition duration-300 group-hover:scale-110 group-hover:bg-accent-500 group-hover:text-white">
-                <MetierIcon metier={m.id} className="size-6" />
-              </span>
-              <span className="text-sm font-semibold text-slate-800">{m.label}</span>
-              <span className="-mt-2 text-xs text-slate-400">{m.techniciens} pros</span>
-            </Link>
-          ))}
-        </Reveal>
+        <GrilleMetiers />
       </section>
 
       <PublierDemande />
@@ -123,11 +109,7 @@ export default function Accueil() {
             Voir tous les pros <ArrowRight className="size-4" />
           </LinkButton>
         </div>
-        <Reveal className="grid gap-5 sm:grid-cols-2 xl:grid-cols-4" stagger={0.1} y={30}>
-          {top.map((t) => (
-            <TechnicienProCard key={t.id} tech={t} />
-          ))}
-        </Reveal>
+        <MeilleursTechniciens />
       </section>
 
       {/* Témoignages */}

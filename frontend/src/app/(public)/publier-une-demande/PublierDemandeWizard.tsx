@@ -7,7 +7,8 @@ import { enter, gsap, prefersReducedMotion, useGSAP } from "@/components/motion/
 import { Avatar, Button, Card, cn, Field, Input, LinkButton, MetierIcon, Rating, Select, Textarea } from "@/components/ui";
 import { Modal, Toggle } from "@/components/ui/interactive";
 import AdressePicker from "@/components/map/AdressePicker";
-import { formatGNF, getMetier, getTechnicien, METIERS, ZONES, type MetierId } from "@/lib/data";
+import { formatGNF, getMetier, getTechnicien, ZONES, type MetierId } from "@/lib/data";
+import { useMetiers } from "@/lib/plateforme";
 import type { Point } from "@/lib/geo";
 import { notifier } from "@/lib/notifier";
 import { apiActive, texteErreur } from "@/lib/api";
@@ -75,6 +76,7 @@ function ecrireBrouillon(b: Brouillon | null) {
  * se connecte ou crée son compte, puis revient ici avec `?envoi=1` pour finaliser l'envoi.
  */
 function Wizard() {
+  const metiers = useMetiers();
   const params = useSearchParams();
   const retourAuth = params.get("envoi") === "1";
   // Rendu côté client uniquement (useSearchParams sous Suspense) : la lecture du stockage est sûre ici.
@@ -287,7 +289,7 @@ function Wizard() {
                   <p className="mt-1 text-sm text-slate-500">Choisissez le métier puis décrivez votre problème.</p>
                 </div>
                 <div className="grid grid-cols-4 gap-2 md:grid-cols-8">
-                  {METIERS.map((m) => (
+                  {metiers.map((m) => (
                     <button
                       key={m.id}
                       type="button"

@@ -9,7 +9,8 @@ import Reveal from "@/components/motion/Reveal";
 import { Avatar, Button, Card, cn, Field, Input, LinkButton, MetierIcon, PageHeader, Rating, Select, Textarea } from "@/components/ui";
 import { Toggle } from "@/components/ui/interactive";
 import AdressePicker from "@/components/map/AdressePicker";
-import { CLIENT_CONNECTE, formatGNF, getMetier, getTechnicien, METIERS, ZONES, type MetierId } from "@/lib/data";
+import { CLIENT_CONNECTE, formatGNF, getMetier, getTechnicien, ZONES, type MetierId } from "@/lib/data";
+import { useMetiers } from "@/lib/plateforme";
 import type { Point } from "@/lib/geo";
 import { apiActive, texteErreur } from "@/lib/api";
 import { idZone, useZonesApi } from "@/lib/auth";
@@ -22,6 +23,7 @@ import Image from "next/image";
 export const CRENEAUX = { matin: "Matin (8h – 12h)", aprem: "Après-midi (12h – 17h)", soir: "Soir (17h – 20h)", flex: "Flexible" };
 
 export default function NouvelleDemandeForm() {
+  const metiers = useMetiers();
   const params = useSearchParams();
   const tech = getTechnicien(params.get("technicien") ?? "");
   const root = useRef<HTMLDivElement>(null);
@@ -145,7 +147,7 @@ export default function NouvelleDemandeForm() {
           <Card className="p-6">
             <h2 className="mb-4 font-bold text-slate-900">1. Quel type de travaux ?</h2>
             <div className="grid grid-cols-4 gap-2 md:grid-cols-8">
-              {METIERS.map((m) => (
+              {metiers.map((m) => (
                 <button
                   key={m.id}
                   type="button"

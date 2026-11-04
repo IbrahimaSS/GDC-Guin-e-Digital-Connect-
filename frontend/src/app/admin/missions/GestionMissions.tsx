@@ -1,33 +1,53 @@
 "use client";
 
 import { BriefcaseBusiness, CheckCircle2, Clock, Wallet, Zap } from "lucide-react";
+import Link from "next/link";
 import { useState } from "react";
 import Reveal from "@/components/motion/Reveal";
 import { StatutDemandeBadge } from "@/components/shared/status";
 import { Avatar, Card, MetierIcon, PageHeader, StatCard } from "@/components/ui";
 import { Tabs } from "@/components/ui/interactive";
 import { Pagination, SearchBox, Table, TableToolbar, Td, Th } from "@/components/ui/table";
-import { formatGNF, getTechnicien, TOUTES_DEMANDES, type StatutDemande } from "@/lib/data";
+import { useStatsAdmin, type Page } from "@/lib/admin";
+import { apiActive } from "@/lib/api";
+import { formatGNF, TOUTES_DEMANDES, type StatutDemande } from "@/lib/data";
+import { technicienDe, versDemande, type DemandeApi } from "@/lib/demandes";
+import { useApi } from "@/lib/useApi";
 
 type Filtre = "toutes" | StatutDemande;
 
 export default function GestionMissions() {
   const [filtre, setFiltre] = useState<Filtre>("toutes");
   const [q, setQ] = useState("");
-  const count = (s: StatutDemande) => TOUTES_DEMANDES.filter((d) => d.statut === s).length;
-  const liste = TOUTES_DEMANDES.filter(
-    (d) => (filtre === "toutes" || d.statut === filtre) && (d.titre + d.client + d.reference).toLowerCase().includes(q.toLowerCase()),
-  );
+  const stats = useStatsAdmin().donnees;
+
+  // Avec l'API : filtre et recherche côté serveur (référence, titre, client).
+  const params = new URLSearchParams({ parPage: "100" });
+  if (filtre !== "toutes") params.set("statut", filtre.toUpperCase());
+  if (q.trim()) params.set("q", q.trim());
+  const distants = useApi<Page<DemandeApi>>(apiActive ? `/admin/demandes?${params}` : null);
+
+  const demandes = apiActive ? (distants.donnees?.resultats ?? []).map(versDemande) : TOUTES_DEMANDES;
+  const count = (s: StatutDemande) => (apiActive ? (stats?.demandes[s.toUpperCase() as keyof NonNullable<typeof stats>["demandes"]] ?? 0) : TOUTES_DEMANDES.filter((d) => d.statut === s).length);
+  const total = apiActive ? (stats ? Object.values(stats.demandes).reduce((a, b) => a + b, 0) : 0) : TOUTES_DEMANDES.length;
+  const liste = apiActive ? demandes : demandes.filter((d) => (filtre === "toutes" || d.statut === filtre) && (d.titre + d.client + d.reference).toLowerCase().includes(q.toLowerCase()));
+  // Montant : total du devis payé s'il existe, sinon le budget indiqué par le client.
+  const montants = new Map((distants.donnees?.resultats ?? []).map((d) => [d.id, (d as DemandeApi & { devis?: { paiement?: { montant: number } | null } | null }).devis?.paiement?.montant]));
 
   return (
     <>
       <PageHeader title="Toutes les missions" subtitle="Suivi global des demandes et des interventions sur la plateforme." />
       <Reveal className="mb-6 grid grid-cols-2 gap-4 lg:grid-cols-4">
-        <StatCard icon={BriefcaseBusiness} label="Missions ce mois" value={428} />
-        <StatCard icon={Clock} label="Délai moyen de réponse (min)" value={42} tone="orange" />
-        <StatCard icon={CheckCircle2} label="Taux de réussite" value={94} suffix=" %" tone="green" />
-        <StatCard icon={Wallet} label="Volume (M GNF)" value={182.4} decimals={1} tone="violet" />
+        <StatCard icon={BriefcaseBusiness} label="Demandes ce mois" value={apiActive ? (stats?.missions.ceMois ?? 0) : 428} />
+        <StatCard icon={Clock} label="Délai moyen de réponse (min)" value={apiActive ? (stats?.missions.delaiReponseMinutes ?? 0) : 42} tone="orange" />
+        <StatCard icon={CheckCircle2} label="Taux de réussite" value={apiActive ? (stats?.missions.tauxReussite ?? 0) : 94} suffix=" %" tone="green" />
+        <StatCard icon={Wallet} label="Volume (M GNF)" value={apiActive ? (stats?.paiements.volume ?? 0) / 1_000_000 : 182.4} decimals={1} tone="violet" />
       </Reveal>
+      {apiActive && (
+        <p className="-mt-3 mb-5 text-xs text-slate-400">
+          Délai de réponse : temps moyen entre la publication et l&apos;acceptation. Taux de réussite : missions terminées parmi les missions clôturées (terminées ou annulées).
+        </p>
+      )}
       <Card>
         <TableToolbar>
           <Tabs<Filtre>
@@ -35,8 +55,9 @@ export default function GestionMissions() {
             onChange={setFiltre}
             variant="pill"
             tabs={[
-              { id: "toutes", label: "Toutes", count: TOUTES_DEMANDES.length },
+              { id: "toutes", label: "Toutes", count: total },
               { id: "envoyee", label: "En attente", count: count("envoyee") },
+              { id: "acceptee", label: "Acceptées", count: count("acceptee") },
               { id: "en_cours", label: "En cours", count: count("en_cours") },
               { id: "terminee", label: "Terminées", count: count("terminee") },
               { id: "annulee", label: "Annulées", count: count("annulee") },
@@ -56,9 +77,10 @@ export default function GestionMissions() {
               <Th>Statut</Th>
             </tr>
           </thead>
-          <Reveal as="tbody" deps={[filtre, q]} y={10} stagger={0.04}>
+          <Reveal as="tbody" deps={[filtre, q, liste.length]} y={10} stagger={0.04}>
             {liste.map((d) => {
-              const t = d.technicienId ? getTechnicien(d.technicienId) : undefined;
+              const t = technicienDe(d);
+              const paye = montants.get(d.id);
               return (
                 <tr key={d.id} className="transition hover:bg-slate-50/80">
                   <Td>
@@ -77,17 +99,19 @@ export default function GestionMissions() {
                   <Td className="text-slate-700">{d.client}</Td>
                   <Td>
                     {t ? (
-                      <span className="inline-flex items-center gap-2">
+                      <Link href={`/techniciens/${t.id}`} className="inline-flex items-center gap-2 hover:text-brand-600">
                         <Avatar nom={t.nom} className="size-7 text-[10px]" />
                         {t.nom}
-                      </span>
+                      </Link>
                     ) : (
                       <span className="text-xs italic text-slate-400">Non assigné</span>
                     )}
                   </Td>
                   <Td className="text-slate-600">{d.zone}</Td>
                   <Td className="whitespace-nowrap text-slate-600">{d.date}</Td>
-                  <Td className="whitespace-nowrap font-semibold">{d.budget ? formatGNF(d.budget) : "—"}</Td>
+                  <Td className="whitespace-nowrap font-semibold">
+                    {paye ? formatGNF(paye) : d.budget ? <span className="font-normal text-slate-500">{formatGNF(d.budget)} (budget)</span> : "—"}
+                  </Td>
                   <Td>
                     <StatutDemandeBadge statut={d.statut} />
                   </Td>
@@ -96,7 +120,8 @@ export default function GestionMissions() {
             })}
           </Reveal>
         </Table>
-        <Pagination total={liste.length} label="missions" />
+        {apiActive && !distants.chargement && liste.length === 0 && <p className="p-6 text-center text-sm text-slate-400">Aucune mission ne correspond à cette recherche.</p>}
+        <Pagination total={apiActive ? (distants.donnees?.total ?? 0) : liste.length} label="missions" />
       </Card>
     </>
   );

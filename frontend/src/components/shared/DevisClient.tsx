@@ -10,6 +10,7 @@ import { apiActive, texteErreur } from "@/lib/api";
 import { formatGNF, type Demande } from "@/lib/data";
 import { MOYENS, sousTotal, totalDevis, type MoyenPaiement, type Paiement } from "@/lib/devis";
 import { useDevisClient } from "@/lib/devisApi";
+import { useParametresPublics } from "@/lib/plateforme";
 import { useSession } from "@/lib/session";
 import { STATUTS_DEVIS } from "./DevisEditeur";
 
@@ -21,7 +22,11 @@ export default function DevisClient({ demande, technicien }: { demande: Demande;
   const session = useSession();
   const [ouvert, setOuvert] = useState(false);
   const [etape, setEtape] = useState<Etape>("choix");
-  const [moyen, setMoyen] = useState<MoyenPaiement>("orange");
+  const [choix, setMoyen] = useState<MoyenPaiement>("orange");
+  // Seuls les moyens de paiement activés dans le back-office sont proposés.
+  const actifs = useParametresPublics()?.moyensPaiement;
+  const disponibles = (Object.keys(MOYENS) as MoyenPaiement[]).filter((m) => !actifs || actifs[m]);
+  const moyen = disponibles.includes(choix) ? choix : (disponibles[0] ?? choix);
   // Par défaut, le numéro du compte connecté (celui de la maquette en démonstration).
   const [numeroSaisi, setNumero] = useState<string | null>(null);
   const numero = numeroSaisi ?? (apiActive ? (session?.utilisateur.telephone.replace(/^\+224\s?/, "") ?? "") : "621 11 22 33");
@@ -180,7 +185,8 @@ export default function DevisClient({ demande, technicien }: { demande: Demande;
         <div ref={modal}>
           {etape === "choix" && (
             <div className="space-y-3">
-              {(Object.keys(MOYENS) as MoyenPaiement[]).map((m) => (
+              {disponibles.length === 0 && <p className="text-sm text-slate-500">Aucun moyen de paiement n’est disponible pour le moment.</p>}
+              {disponibles.map((m) => (
                 <button
                   key={m}
                   type="button"
@@ -214,7 +220,7 @@ export default function DevisClient({ demande, technicien }: { demande: Demande;
                 </label>
               )}
               {erreur && <p className="text-sm font-medium text-red-600">{erreur}</p>}
-              <Button size="lg" className="mt-2 w-full" onClick={payer}>
+              <Button size="lg" className="mt-2 w-full" onClick={payer} disabled={disponibles.length === 0}>
                 {moyen === "especes" ? "Confirmer le paiement en espèces" : `Payer ${formatGNF(total)}`}
               </Button>
             </div>

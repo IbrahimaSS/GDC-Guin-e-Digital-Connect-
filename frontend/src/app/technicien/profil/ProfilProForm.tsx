@@ -9,7 +9,8 @@ import { toast } from "@/components/motion/Toaster";
 import { Button, Card, cn, Field, Input, LinkButton, PageHeader, Rating, Select, Textarea, VerificationBadge } from "@/components/ui";
 import { api, apiActive, texteErreur } from "@/lib/api";
 import { idZone, useZonesApi } from "@/lib/auth";
-import { METIERS, TECHNICIEN_CONNECTE as moi, ZONES, type Niveau } from "@/lib/data";
+import { TECHNICIEN_CONNECTE as moi, ZONES, type Niveau } from "@/lib/data";
+import { useMetiers } from "@/lib/plateforme";
 import { modifierMonProfil, useMonProfil, type MonProfilApi } from "@/lib/monProfil";
 import { mettreAJourUtilisateur, useSession, type UtilisateurApi } from "@/lib/session";
 
@@ -33,6 +34,7 @@ function ProfilApi() {
 }
 
 function FormulairePro({ profil, utilisateur: u }: { profil: MonProfilApi; utilisateur: UtilisateurApi }) {
+  const metiers = useMetiers();
   const zonesApi = useZonesApi(true);
   const [infos, setInfos] = useState({ metierId: profil.metierId, experience: profil.experience, entreprise: u.entreprise ?? "", bio: profil.bio });
   const [specialites, setSpecialites] = useState(profil.specialites);
@@ -50,7 +52,7 @@ function FormulairePro({ profil, utilisateur: u }: { profil: MonProfilApi; utili
     { fait: profil.realisations.length >= 4, label: "4 photos au portfolio" },
   ];
   const complet = Math.round((etapes.filter((e) => e.fait).length / etapes.length) * 100);
-  const metier = METIERS.find((m) => m.id === profil.metierId)?.label ?? profil.metier.label;
+  const metier = metiers.find((m) => m.id === profil.metierId)?.label ?? profil.metier.label;
 
   async function enregistrer() {
     if (tarifs.some((t) => !t.prestation.trim())) return toast("Indiquez le nom de chaque prestation, ou supprimez la ligne.", "error");
@@ -130,7 +132,7 @@ function FormulairePro({ profil, utilisateur: u }: { profil: MonProfilApi; utili
             <div className="grid gap-4 md:grid-cols-2">
               <Field label="Métier principal">
                 <Select value={infos.metierId} onChange={(e) => setInfos({ ...infos, metierId: e.target.value })}>
-                  {METIERS.map((m) => (
+                  {metiers.map((m) => (
                     <option key={m.id} value={m.id}>
                       {m.label}
                     </option>
@@ -249,6 +251,7 @@ function FormulairePro({ profil, utilisateur: u }: { profil: MonProfilApi; utili
 // ------------------------------------------------------------ Démonstration
 
 function ProfilDemo() {
+  const metiers = useMetiers();
   const [specialites, setSpecialites] = useState(moi.specialites);
   const [nouvelle, setNouvelle] = useState("");
   const [zones, setZones] = useState(moi.zonesIntervention);
@@ -301,7 +304,7 @@ function ProfilDemo() {
             <div className="grid gap-4 md:grid-cols-2">
               <Field label="Métier principal">
                 <Select defaultValue={moi.metier}>
-                  {METIERS.map((m) => (
+                  {metiers.map((m) => (
                     <option key={m.id} value={m.id}>
                       {m.label}
                     </option>

@@ -12,7 +12,8 @@ import { toast } from "@/components/motion/Toaster";
 import { Button, cn, Field, Input, MetierIcon, Select, Textarea } from "@/components/ui";
 import { api, apiActive, texteErreur } from "@/lib/api";
 import { dejaInscrit, idZone, inscrire, useZonesApi } from "@/lib/auth";
-import { getMetier, METIERS, ZONES, type MetierId } from "@/lib/data";
+import { getMetier, ZONES, type MetierId } from "@/lib/data";
+import { useMetiers } from "@/lib/plateforme";
 import { ACCEPTE, televerser, verifierFichier, type TypeFichier } from "@/lib/fichiers";
 import { ESPACE_ROLE, mettreAJourUtilisateur, useNumeroVerifie, type UtilisateurApi } from "@/lib/session";
 
@@ -87,6 +88,7 @@ async function envoyerDocuments(d: Documents, metier: string) {
 }
 
 export default function InscriptionTechnicienForm() {
+  const metiers = useMetiers();
   const router = useRouter();
   const ref = useRef<HTMLDivElement>(null);
   const [etape, setEtape] = useState(0);
@@ -262,7 +264,7 @@ export default function InscriptionTechnicienForm() {
               <div>
                 <p className="mb-2 text-sm font-semibold text-slate-700">Métier principal *</p>
                 <div className="grid grid-cols-4 gap-2">
-                  {METIERS.map((m) => (
+                  {metiers.map((m) => (
                     <button
                       key={m.id}
                       type="button"
