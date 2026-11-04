@@ -255,4 +255,36 @@ export class NotificationsService {
       take: 200,
     });
   }
+
+  /**
+   * Envoie le modèle, rempli avec des valeurs d'exemple, au numéro de l'administrateur
+   * (sur chacun de ses canaux). Aucune notification n'est créée dans l'application.
+   */
+  async tester(evenement: Evenement, adminId: string) {
+    const admin = await this.prisma.user.findUniqueOrThrow({
+      where: { id: adminId },
+      select: { telephone: true },
+    });
+    const modele = await this.modele(evenement);
+    const texte = remplir(modele.texte, {
+      client: 'Mohamed Camara',
+      technicien: 'Mamadou Diallo',
+      mission: 'Réparation de climatisation',
+      montant: '350 000 GNF',
+      code: '4821',
+      resultat: 'approuvée',
+    });
+    for (const canal of modele.canaux) {
+      await this.sms.envoyer({ canal, numero: admin.telephone, texte });
+      await this.prisma.envoiNotification.create({
+        data: {
+          evenement: `test:${evenement}`,
+          canal,
+          numero: admin.telephone,
+          texte,
+        },
+      });
+    }
+    return { envoyes: modele.canaux.length, numero: admin.telephone };
+  }
 }

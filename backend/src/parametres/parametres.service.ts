@@ -12,6 +12,8 @@ export const PARAMETRES = {
   telephoneSupport: '+224 620 00 00 00',
   emailSupport: 'support@gdc.gn',
   logoUrl: null as string | null,
+  /** Logo pour fond sombre (barres de navigation, mode sombre) */
+  logoSombreUrl: null as string | null,
   /** Les nouveaux comptes peuvent être créés */
   inscriptionsOuvertes: true,
   /** Un bandeau d'information est affiché aux visiteurs */
@@ -44,6 +46,7 @@ const PUBLICS: CleParametre[] = [
   'slogan',
   'messageAccueil',
   'logoUrl',
+  'logoSombreUrl',
   'telephoneSupport',
   'emailSupport',
   'inscriptionsOuvertes',
@@ -92,6 +95,10 @@ const REGLES: Record<CleParametre, Regle> = {
     typeof v === 'string' && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v)
       ? null
       : 'adresse e-mail attendue',
+  logoSombreUrl: (v) =>
+    v === null || (typeof v === 'string' && /^https?:\/\/\S+$/.test(v))
+      ? null
+      : 'adresse web ou vide attendue',
   logoUrl: (v) =>
     v === null || (typeof v === 'string' && /^https?:\/\/\S+$/.test(v))
       ? null

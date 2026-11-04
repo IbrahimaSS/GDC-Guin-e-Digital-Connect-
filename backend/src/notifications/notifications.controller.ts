@@ -103,6 +103,16 @@ export class AdminNotificationsController {
     return this.notifications.journal();
   }
 
+  /** Envoie le modèle à l'administrateur connecté, avec des valeurs d'exemple. */
+  @Post('modeles/:evenement/test')
+  @HttpCode(200)
+  tester(
+    @Utilisateur() u: UtilisateurConnecte,
+    @Param('evenement') evenement: string,
+  ) {
+    return this.notifications.tester(this.evenement(evenement), u.id);
+  }
+
   private evenement(e: string): Evenement {
     return (e in MODELES ? e : 'inconnu') as Evenement;
   }
